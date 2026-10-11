@@ -250,14 +250,20 @@ async (args) => {
         found.add(el);
       }
     }
-    // Headed divs are capture-only. If a heading has its own wrapper,
-    // include its adjacent cart rows without selecting the entire main page.
+    // Headed divs are capture-only. A heading can sit several wrappers above
+    // its rows and footer; select the narrow containing column, not its title
+    // strip. Stop before a wide page container, independent of site wording.
     for (const heading of root.querySelectorAll('h1,h2,h3,h4,[role=heading]')) {
       let container = heading.parentElement;
       if (!container || container.tagName !== 'DIV') continue;
-      const outer = container.parentElement;
-      if (outer && outer.tagName === 'DIV' && outer !== root &&
-          container.childElementCount <= 2) container = outer;
+      const initialWidth = container.getBoundingClientRect().width;
+      for (let depth = 0; depth < 5; depth += 1) {
+        const outer = container.parentElement;
+        if (!outer || outer === root || outer.tagName !== 'DIV') break;
+        const width = outer.getBoundingClientRect().width;
+        if (width > Math.max(500, initialWidth * 1.4)) break;
+        container = outer;
+      }
       if (wanted(container) && getComputedStyle(container).cursor !== 'pointer' &&
           (!container.parentElement || getComputedStyle(container.parentElement).cursor !== 'pointer')) {
         captureOnly.add(container);

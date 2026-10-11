@@ -2216,13 +2216,13 @@
     {
       "slug": "yandex-travel",
       "name": "yandex-travel",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "type": "extension",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "823fb22f8b1dc5bf737cac8544946a0f8a8b8d4c14e3a1886be6efa7beb7aee3",
-          "size": 7599
+          "sha256": "2a8408fc02e4359f82d9b60edcef2d48699e0b7ab3a4fe8b621f503993c03ef6",
+          "size": 11751
         },
         {
           "path": "eats_driver.py",
@@ -2231,26 +2231,31 @@
         },
         {
           "path": "eats_session.py",
-          "sha256": "93f789a7c3f48a9650a642601805c603dd623a66d724c2ef404f5194fea37bc0",
-          "size": 40995
+          "sha256": "8b5e2945bbf883a508f4d677578ed231b514b273bf67fe408a55d8501b57564f",
+          "size": 42053
         },
         {
           "path": "observer.js",
-          "sha256": "895e1291cf457be7b11bd4e2eddc703b89e5b9986f325128a3621642c479d71d",
-          "size": 19963
+          "sha256": "709159ba9eac3e915effb4fcdaafac0f755467012b4cbf24874550cd4c6591c1",
+          "size": 20271
         },
         {
           "path": "plugin.py",
-          "sha256": "f82caa0f4d72ae730fad2627834ae054cfc8262562cbe3ef8127cc8bc44de288",
-          "size": 6005
+          "sha256": "b485d79b66890e32a5a20b9bbe70ac91de7c04581a4ffa60b6bd9e06c11fc224",
+          "size": 6351
         },
         {
           "path": "scripts/eats_browser.py",
           "sha256": "41483f6205b9a896827d8eda87193168c511d8a51bd244a922945be3e7c14350",
           "size": 2015
+        },
+        {
+          "path": "scripts/research_session.py",
+          "sha256": "9fc15bd168f8257574ecf81c5df650aad8246b74503bcb6e2e2a6f0620d92f0e",
+          "size": 4037
         }
       ],
-      "description": "Черновик: агент выбирает адрес, ресторан и блюда по свежему DOM и собирает корзину в видимом окне Яндекс Еды. Оформление заказа не реализовано; Яндекс Такси пока без инструмента. Требуется проверка установленного скилла."
+      "description": "Draft adaptive Yandex Eats cart preparation: reusable session, fresh DOM-guided choices, bounded asynchronous observation and private cart capture. Taxi and checkout are not implemented; installed-host/live validation remains required."
     }
   ]
 }

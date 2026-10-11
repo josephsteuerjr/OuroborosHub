@@ -76,22 +76,26 @@ TOOLS: tuple[tuple[str, Callable[..., str], str, str, dict[str, Any]], ...] = (
      "Act on one element from the latest observation, then return a fresh observation. Choose the "
      "element from its role, name and surrounding text. Exact names may be ambiguous; use element_id. "
      "Use only for address, restaurant, dish and cart assembly. Stop before checkout, payment or order "
-     "confirmation. A generic click can trigger an unexpected transaction; intent is advisory.",
+     "confirmation. A generic click can trigger an unexpected transaction; intent is advisory. "
+     "Optional wait_ms pumps events after one action before reading; it is not proof of success.",
      {"type": "object", "additionalProperties": False, "required": ["action", "observation_id"],
       "properties": {
           "action": {"type": "string", "enum": list(ACTIONS)},
           "observation_id": {"type": "string"}, "element_id": {"type": "string"},
           "target_name": {"type": "string"}, "target_role": {"type": "string"},
           "intent": {"type": "string", "enum": list(INTENTS)},
-          "text": {"type": "string"}, "key": {"type": "string", "enum": list(KEYS)}}}),
+          "text": {"type": "string"}, "key": {"type": "string", "enum": list(KEYS)},
+          "wait_ms": {"type": "integer", "minimum": 0, "maximum": 10000}}}),
     ("yandex_eats_search", eats_search, "search",
      "Fill a selected search field; trigger_name is an exact button name the agent chose from the "
      "current UI. After filling, click it only if unique and return the results in one call. "
-     "Without it, Enter works only for a structural search field. Never use for secrets.",
+     "Without it, Enter works only for a structural search field. Never use for secrets. "
+     "Optional wait_ms pumps events before reading, without repeating input or asserting success.",
      {"type": "object", "additionalProperties": False, "required": ["query"], "properties": {
          "query": {"type": "string"}, "observation_id": {"type": "string"},
          "element_id": {"type": "string"}, "press_enter": {"type": "boolean"},
-         "trigger_name": {"type": "string"}}}),
+         "trigger_name": {"type": "string"},
+         "wait_ms": {"type": "integer", "minimum": 0, "maximum": 10000}}}),
     ("yandex_eats_capture", eats_capture, "capture",
      "Capture the visible Eats page or ONE non-actionable region from the latest observation. "
      "Editable fields, selects and iframes are masked; the result is a local path, not an owner delivery. "

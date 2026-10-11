@@ -1,7 +1,7 @@
 ---
 name: yandex-travel
 description: "Яндекс Еда в Алматы: агент по свежему HTML выбирает адрес, ресторан и блюда, нажимает элементы и собирает корзину. Владелец входит в аккаунт; оформление не реализовано. Яндекс Такси пока без инструмента."
-version: 0.2.0
+version: 0.2.2
 type: extension
 runtime: python3
 entry: plugin.py
@@ -56,7 +56,9 @@ after enabling may mean the companion is still starting.
 
 - `yandex_eats_open(home?)` starts or reuses the window; `home=true` loads the
   service root again. Do not reload while the owner is signing in or entering
-  information.
+  information. An empty service page gets up to eight 250 ms event-pump/read
+  polls for delayed client rendering. `readiness=empty_after_wait` means it
+  stayed empty, not that the site or cart is ready.
 - `yandex_eats_observe(query?, scope?, scroll?, wait_ms?)` returns page text,
   element ids, accessible names, surrounding card text, state and location.
   `query` filters the whole page; `scope=page` reads beyond the viewport.
@@ -65,12 +67,16 @@ after enabling may mean the companion is still starting.
   Exact `target_name` matches may be ambiguous; choose `element_id` from the
   observed card. For clicks supply an `intent` such as `choose` or `add_item`.
   The result includes a fresh observation; use it for the next action.
+  Optional `wait_ms` (0–10000, default 0) pumps browser events after one input
+  before reading, for an asynchronous UI update you expect. It never retries
+  the input or proves the expected update occurred: check the returned cart.
 - `yandex_eats_search(query, observation_id?, element_id?, press_enter?, trigger_name?)`
   fills the selected search field. If the agent has observed the search button,
   it supplies its exact `trigger_name` with `press_enter=false`; the tool checks
   that this button is unique after filling, clicks it, and returns the results
   in one call. No button name is hardcoded in the skill. Without trigger_name,
-  Enter is sent only to a structural search field.
+  Enter is sent only to a structural search field. Optional `wait_ms` has the
+  same bounded event-pumping meaning as on `act`, after the search inputs.
 - `yandex_eats_capture(observation_id, element_id?)` writes a private PNG of
   the visible page or one selected non-actionable region from the current observation.
   Editable and role-based text fields, selects and iframes are masked. It returns a local path, **not** a sent photo;
@@ -82,6 +88,66 @@ identity, disabled/covered state, link origin and sensitive-field structure
 before input. A refusal with a fresh observation means choose from that new
 observation. If an action reports an unknown effect, observe the page before
 anything else.
+
+### Reusable research session (not an installed-skill test)
+
+For an owner-present development probe, `scripts/research_session.py` replaces
+the task-local `eats_live.py` and `eats_call.py` files. Start it **once** as a
+tracked service using the Python environment that has Playwright, an explicitly
+chosen existing private profile and a private state directory outside Git:
+
+```text
+python scripts/research_session.py --state-dir <private-session-dir> serve --profile <owner-selected-profile>
+python scripts/research_session.py --state-dir <same-dir> call open '{}'
+python scripts/research_session.py --state-dir <same-dir> call search '{"query":"..."}'
+```
+
+The first command only publishes a loopback endpoint; Chrome launches at
+`open`. Later calls reuse the same visible window and profile. Stop the tracked
+service at the end: its window closes, its profile remains. Choose a stable
+private state directory under the local application state if the endpoint and
+audit must be findable on a later task; a task-drive directory is disposable.
+Start the service again on the next task rather than retaining an unowned
+background process. Do not move or copy
+the owner's profile into the skill's `chrome-profile/` implicitly, and do not
+run a personal-account probe without the owner present. The installed skill
+uses its own host-supervised companion and marked profile; this research CLI
+is not an alternate installed entry point or a credential migration.
+
+Check the chosen interpreter's Playwright import once before `serve`; reuse
+that interpreter and the same state directory for subsequent `call` commands.
+The CLI prints the structured result and exits nonzero for refused, unavailable,
+login-required, lost-session or unknown-effect results. Read it before deciding
+what to do; an unsuccessful call must not cause a blind repeat of an input.
+
+Combine only steps whose target and outcome are mechanically determined:
+`open` already observes, `act` already returns a fresh observation, and
+`search` fills, optionally activates the **agent-selected** search control,
+waits, and returns a new observation. Do not call `observe` again just to
+repeat those results. A changed page, multiple matching fields, ambiguous
+restaurant/dish, unavailable item or uncertain effect calls for a new agent
+decision on the returned DOM or a screenshot. Never batch independent choices
+or checkout behind one blind script.
+
+### When the site changes
+
+Do not preserve a restaurant/dish/button route from an old observation. If a
+node is renamed, replaced, covered or the tab navigates, read the fresh state
+returned with the refusal and choose again. An ambiguous search field or
+missing control is a real decision point, not permission to use `.first` or
+old coordinates. Use `query` to inspect a focused question, remembering that
+it replaces the latest element registry; use the full returned observation
+when the next choice spans multiple regions. Inspect a screenshot for an
+image-only or unclear state and before handing over the cart; PNG dimensions
+alone do not prove its items and total are visible.
+
+For a demonstrated observer/controller gap, preserve the failing observation,
+reproduce its structural shape with a nonsensitive intercepted fixture, repair
+the smallest helper, test it, and obtain a new observation after restarting
+the tracked research service. The profile persists; the old observation IDs
+do not. Do not turn a script failure into success or repeat an uncertain
+cart-changing action. A different script/control method remains an agent
+choice based on new evidence, not a permanently encoded site workflow.
 
 ## Working loop
 

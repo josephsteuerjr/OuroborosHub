@@ -87,6 +87,12 @@ for (const button of document.querySelectorAll('.add')) {
 <button>Добавить</button><button>Подробнее</button></div>
 <article id="restaurant-tile" style="cursor:pointer" onclick="window.__restaurant = true">Ресторан без кнопки</article>
 </main></body></html>""",
+    EDA + "/r/nested-cart": _HEAD.format(title="Корзина") + """
+<main><div style="width:340px;margin-left:auto"><div><div><div><h3>Корзина</h3>
+<button>Очистить</button></div></div></div>
+<div id="cart-rows"><p>Первое блюдо × 1</p><p>Второе блюдо × 1</p>
+<div style="height:350px"></div><p id="cart-total">Итого 9 450 ₸</p></div>
+<button>Далее</button></div></main></body></html>""",
     EDA + "/overlay": _HEAD.format(title="Оверлей") + """
 <main><button id="under">Под слоем</button></main>
 <div style="position:fixed;inset:0;background:rgba(0,0,0,.3)"></div></body></html>""",
@@ -227,6 +233,27 @@ class HeadlessFixtureTests(unittest.TestCase):
         self.assertEqual(self.act(latest, restaurant["id"], intent="open")["status"], "done")
         self.assertTrue(page.evaluate("() => window.__restaurant"))
 
+    def test_nested_cart_capture_includes_rows_and_footer_not_just_heading(self):
+        from struct import unpack
+        for viewport in ({"width": 1280, "height": 900}, {"width": 390, "height": 844}):
+            with self.subTest(viewport=viewport):
+                self.session._driver._page.set_viewport_size(viewport)
+                menu = self.go("/r/nested-cart", scope="page")
+                region = self.find(menu, lambda item: item["role"] == "region" and
+                                   "Корзина" in item["name"])
+                captured = self.session.handle("capture", {"observation_id": menu["observation_id"],
+                                                           "element_id": region["id"]})
+                self.assertEqual(captured["status"], "captured_private", captured)
+                image = Path(captured["path"]).read_bytes()
+                width, height = unpack(">II", image[16:24])
+                self.assertGreater(width, 250)
+                self.assertGreater(height, 400)
+                self.assertLess(width, 600)  # not the entire page
+                # A dimension-only assertion can pass for an empty tall wrapper.
+                # The actual rendered fixture column includes both rows + total.
+                expected = self.session._driver._page.locator("main > div").screenshot()
+                self.assertEqual(image, expected)
+
     def test_capture_div_can_become_clickable_on_a_fresh_observation(self):
         first = self.go("/r/layout", scope="page")
         cart = self.find(first, lambda item: item["role"] == "region" and
@@ -235,8 +262,8 @@ class HeadlessFixtureTests(unittest.TestCase):
         page.evaluate("""() => { const cart = document.getElementById('ordinary-cart');
           cart.style.cursor = 'pointer'; cart.onclick = () => window.__cartClicked = true; }""")
         second = self.session.handle("observe", {"scope": "page"})["observation"]
-        current = self.find(second, lambda item: item["id"] == cart["id"])
-        self.assertEqual(current["role"], "clickable")
+        current = self.find(second, lambda item: item["role"] == "clickable" and
+                            item["name"].startswith("Корзина"))
         capture = self.session.handle("capture", {"observation_id": second["observation_id"],
                                                   "element_id": current["id"]})
         self.assertEqual((capture["status"], capture["code"]), ("refused", "capture_only_region"))

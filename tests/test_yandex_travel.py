@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -33,6 +35,10 @@ sys.modules[_PACKAGE] = plugin
 _spec.loader.exec_module(plugin)
 core = sys.modules[f"{_PACKAGE}.eats_session"]
 driver_module = importlib.import_module(f"{_PACKAGE}.eats_driver")
+_research_spec = importlib.util.spec_from_file_location("yandex_research_controller",
+                                                       SKILL / "scripts" / "research_session.py")
+research = importlib.util.module_from_spec(_research_spec)
+_research_spec.loader.exec_module(research)
 
 TRANSACTIONAL = ("checkout", "order", "pay", "purchase", "buy", "submit", "confirm", "place", "login", "sign")
 
@@ -262,9 +268,9 @@ class ToolSurfaceTests(SessionCase):
         self.assertEqual(properties["yandex_eats_observe"].keys(), {"query", "scope", "scroll", "wait_ms"})
         self.assertEqual(properties["yandex_eats_act"].keys(),
                          {"action", "observation_id", "element_id", "target_name", "target_role",
-                          "intent", "text", "key"})
+                          "intent", "text", "key", "wait_ms"})
         self.assertEqual(properties["yandex_eats_search"].keys(),
-                         {"query", "observation_id", "element_id", "press_enter", "trigger_name"})
+                         {"query", "observation_id", "element_id", "press_enter", "trigger_name", "wait_ms"})
         self.assertEqual(properties["yandex_eats_capture"].keys(), {"observation_id", "element_id"})
         self.assertEqual(properties["yandex_eats_close"], {})
         for name, (_handler, kwargs) in api.tools.items():
@@ -301,6 +307,21 @@ class ToolSurfaceTests(SessionCase):
             for attempt in cases:
                 with self.subTest(tool=tool, attempt=attempt):
                     result = json.loads(api.tools[tool][0](None, **attempt))
+                    self.assertEqual((result["status"], result["effect"]), ("invalid", "none"))
+        self.assertEqual(contacted, [])
+
+    def test_delay_validation_before_any_companion_request(self):
+        api = self.registered()
+        contacted = []
+        original = plugin.call
+        plugin.call = lambda *args, **kwargs: contacted.append(args) or {"status": "ok"}
+        self.addCleanup(setattr, plugin, "call", original)
+        for tool, args in (("yandex_eats_act", {"action": "click", "observation_id": "o",
+                                              "element_id": "e1", "intent": "add_item"}),
+                           ("yandex_eats_search", {"query": "chosen query"})):
+            for value in (-1, 10001, True, 1.5, "1000"):
+                with self.subTest(tool=tool, value=value):
+                    result = json.loads(api.tools[tool][0](None, **args, wait_ms=value))
                     self.assertEqual((result["status"], result["effect"]), ("invalid", "none"))
         self.assertEqual(contacted, [])
 
@@ -529,6 +550,41 @@ class LiveBoundaryTests(SessionCase):
 
 
 class ProfileTests(SessionCase):
+    def test_research_runner_reuses_only_an_explicit_private_profile(self):
+        profile = self.state / "owner-selected"
+        profile.mkdir(mode=0o700)
+        self.assertEqual(research.existing_profile(profile), profile.resolve())
+        (profile / "Default").mkdir()
+        self.assertEqual(research.existing_profile(profile), profile.resolve())
+        profile.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "private"):
+            research.existing_profile(profile)
+        linked = self.state / "linked"
+        linked.symlink_to(profile, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            research.existing_profile(linked)
+        with self.assertRaises(FileNotFoundError):
+            research.existing_profile(self.state / "missing")
+
+    def test_research_call_has_no_implicit_browser_start(self):
+        session_dir = self.state / "private-session"
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(research.main(["--state-dir", str(session_dir), "call", "open"]), 1)
+        self.assertEqual(json.loads(output.getvalue())["status"], "companion_unavailable")
+        self.assertIn("start serve once", json.loads(output.getvalue())["reason"])
+        self.assertFalse(session_dir.exists())
+
+    def test_research_profile_is_checked_before_creating_state_and_cannot_overlap_it(self):
+        same = self.state / "same"
+        with self.assertRaises(SystemExit):
+            research.main(["--state-dir", str(same), "serve", "--profile", str(same)])
+        self.assertFalse(same.exists())  # a miss must not manufacture a valid profile
+        same.mkdir(mode=0o700)
+        for state, profile in ((same, same), (same / "child", same), (self.state, same)):
+            with self.subTest(state=state, profile=profile), self.assertRaises(SystemExit):
+                research.main(["--state-dir", str(state), "serve", "--profile", str(profile)])
+        self.assertFalse((same / "child").exists())
+
     def test_profile_is_created_marked_private_and_reused_in_the_state_dir(self):
         path = core.prepare_profile(self.state)
         self.assertEqual(path, self.state.resolve() / "chrome-profile")
@@ -724,6 +780,36 @@ class FixtureLaneTests(SessionCase):
         self.assertIn("кондитерская", result["observation"]["text"])
         self.assertEqual(result["observation"]["url"], "https://eda.yandex.kz/almaty/search")
 
+    def test_same_search_result_needs_one_round_trip_instead_of_three(self):
+        """The mechanical fill/Enter/observe batch changes no restaurant decision."""
+        def page():
+            site = restaurant()
+            site.reactions[("search", "press")] = lambda current, _key: current.navigate(
+                "https://eda.yandex.kz/almaty/search", text="Medovic — кондитерская")
+            return site
+
+        baseline = page()
+        old, first = self.opened(baseline)
+        search_id = element(first, lambda item: item["role"] == "searchbox")
+        filled = old.handle("act", {"action": "fill", "observation_id": first["observation_id"],
+                                    "element_id": search_id, "text": "Medovic"})
+        second = filled["observation"]
+        search_id = element(second, lambda item: item["role"] == "searchbox")
+        pressed = old.handle("act", {"action": "press", "observation_id": second["observation_id"],
+                                     "element_id": search_id, "key": "Enter"})
+        last = old.handle("observe", {})["observation"]
+
+        batched = page()
+        new, _ = self.opened(batched)
+        result = new.handle("search", {"query": "Medovic"})
+        self.assertEqual(result["status"], "done")
+        self.assertEqual((last["url"], last["text"]),
+                         (result["observation"]["url"], result["observation"]["text"]))
+        self.assertEqual(baseline.effects, batched.effects)
+        self.assertEqual(pressed["observation"]["url"], last["url"])
+        self.assertEqual((baseline.observed, batched.observed), (4, 3))
+        self.assertEqual((len(baseline.orders), len(batched.orders)), (0, 0))
+
     def test_agent_chosen_trigger_name_combines_fill_and_results_without_hardcoded_button(self):
         site = FakeSite("https://eda.yandex.kz/", [node("field", "combobox", "Искать", tag="input", entry=True)])
 
@@ -834,6 +920,53 @@ class DecisionTests(SessionCase):
 
 
 class SessionLifetimeTests(SessionCase):
+    def test_open_polls_an_empty_page_without_reloading_or_relaunching(self):
+        site = FakeSite(core.ROOT_URL, [], text="")
+        session = self.session(site)
+        pumped = []
+        def pump(ms):
+            pumped.append(ms)
+            if len(pumped) == 3:
+                site.navigate(core.ROOT_URL + "ready", nodes=restaurant().nodes, text="menu ready")
+            return True
+        # Factory already supplied by SessionCase; no real browser is opened.
+        original = session._factory
+        def factory():
+            driver = original()
+            driver.pump = pump
+            return driver
+        session._factory = factory
+        result = session.handle("open", {})
+        self.assertEqual((result["readiness"], result["observation"]["text"]), ("observed", "menu ready"))
+        self.assertEqual(pumped, [250] * 3)
+        self.assertEqual((site.launches, len(site.gotos)), (1, 1))
+        # Reuse does not navigate and preserves a preexisting basket.
+        site.text = "preexisting cart × 2"
+        result = session.handle("open", {})
+        self.assertFalse(result["launched"])
+        self.assertEqual(result["observation"]["text"], site.text)
+        self.assertEqual(len(site.gotos), 1)
+
+    def test_empty_open_is_bounded_and_not_reported_ready(self):
+        site = FakeSite(core.ROOT_URL, [], text="")
+        session = self.session(site)
+        result = session.handle("open", {})
+        self.assertEqual(result["readiness"], "empty_after_wait")
+        self.assertEqual(site.observed, 9)
+        self.assertEqual((site.launches, len(site.gotos)), (1, 1))
+
+    def test_selected_delay_pumps_after_one_action_without_success_assertion(self):
+        site = restaurant()
+        session, observation = self.opened(site)
+        pumped = []
+        session._driver.pump = lambda ms: pumped.append(ms) or True
+        done = session.handle("act", {"action": "click", "observation_id": observation["observation_id"],
+                                      "element_id": "e2", "intent": "add_item", "wait_ms": 10000})
+        self.assertEqual(done["status"], "done")
+        self.assertEqual(site.effects, [("click", "add-honey", "")])
+        self.assertEqual(pumped, [10000])
+        self.assertNotIn("expectation", done)
+
     def test_chrome_starts_only_on_open(self):
         site = restaurant()
         session = self.session(site)

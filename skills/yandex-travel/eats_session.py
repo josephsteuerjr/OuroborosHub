@@ -126,10 +126,15 @@ def validate_observe(args: dict[str, Any]) -> dict[str, Any]:
     scroll = args.get("scroll") or ""
     if scroll and scroll not in SCROLLS:
         raise ValueError(f"scroll must be one of {', '.join(SCROLLS)}")
-    wait_ms = args.get("wait_ms", 0)
-    if isinstance(wait_ms, bool) or not isinstance(wait_ms, int) or not 0 <= wait_ms <= 10000:
-        raise ValueError("wait_ms must be an integer from 0 to 10000")
+    wait_ms = _wait_ms(args)
     return {"query": _text(args.get("query"), "query"), "scope": scope, "scroll": scroll, "wait_ms": wait_ms}
+
+
+def _wait_ms(args: dict[str, Any]) -> int:
+    value = args.get("wait_ms", 0)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 10000:
+        raise ValueError("wait_ms must be an integer from 0 to 10000")
+    return value
 
 
 def validate_close(args: dict[str, Any]) -> dict[str, Any]:
@@ -145,7 +150,7 @@ def validate_capture(args: dict[str, Any]) -> dict[str, str]:
 
 def validate_act(args: dict[str, Any]) -> dict[str, Any]:
     """Validate an element action before contacting the companion."""
-    _only(args, {"action", "observation_id", "element_id", "target_name", "target_role", "intent", "text", "key"})
+    _only(args, {"action", "observation_id", "element_id", "target_name", "target_role", "intent", "text", "key", "wait_ms"})
     action = args.get("action")
     if action not in ACTIONS:
         raise ValueError(f"action must be one of {', '.join(ACTIONS)}")
@@ -155,7 +160,7 @@ def validate_act(args: dict[str, Any]) -> dict[str, Any]:
         "element_id": _text(args.get("element_id"), "element_id", limit=12),
         "target_name": _text(args.get("target_name"), "target_name", limit=120),
         "target_role": _text(args.get("target_role"), "target_role", limit=40),
-        "intent": args.get("intent") or "", "text": "", "key": "",
+        "intent": args.get("intent") or "", "text": "", "key": "", "wait_ms": _wait_ms(args),
     }
     if spec["element_id"] and spec["target_name"]:
         raise ValueError("give element_id or target_name, not both")
@@ -186,7 +191,7 @@ def validate_act(args: dict[str, Any]) -> dict[str, Any]:
 
 def validate_search(args: dict[str, Any]) -> dict[str, Any]:
     """Validate a structural or explicitly selected search field."""
-    _only(args, {"query", "observation_id", "element_id", "press_enter", "trigger_name"})
+    _only(args, {"query", "observation_id", "element_id", "press_enter", "trigger_name", "wait_ms"})
     press_enter = args.get("press_enter", True)
     if not isinstance(press_enter, bool):
         raise ValueError("press_enter must be a boolean")
@@ -194,7 +199,7 @@ def validate_search(args: dict[str, Any]) -> dict[str, Any]:
             "observation_id": _text(args.get("observation_id"), "observation_id", limit=64),
             "element_id": _text(args.get("element_id"), "element_id", limit=12),
             "trigger_name": _text(args.get("trigger_name"), "trigger_name", limit=120),
-            "press_enter": press_enter}
+            "press_enter": press_enter, "wait_ms": _wait_ms(args)}
     if spec["trigger_name"] and press_enter:
         raise ValueError("trigger_name selects the observed search button; set press_enter=false")
     if spec["element_id"] and not spec["observation_id"]:
@@ -399,6 +404,17 @@ class Session:
             self._effect = "navigated"
         self._settle(self._driver, 4000)
         result = self._view(self._driver)
+        # Client-side redirects may start after DOM quiet. Read/pump only;
+        # never reload a retained cart or replay open to obtain a fuller view.
+        for _ in range(8):
+            view = result.get("observation") or {}
+            if result["status"] != "ok" or view.get("elements") or view.get("text"):
+                break
+            self._driver.pump(250)
+            result = self._view(self._live())
+        if result["status"] == "ok":
+            view = result["observation"]
+            result["readiness"] = "observed" if view.get("elements") or view.get("text") else "empty_after_wait"
         result["launched"] = launched
         return result
 
@@ -478,6 +494,10 @@ class Session:
         value = spec["key"] if spec["action"] == "press" else spec["text"]
         epoch = driver.epoch()
         self._perform(driver, record, spec["action"], value)
+        # An agent-chosen delay is not an assertion that a cart changed.
+        # Pump browser events after ONE input, then report the actual state.
+        if spec["wait_ms"]:
+            driver.pump(spec["wait_ms"])
         self._settle(driver, 4000)
         echo = {"action": spec["action"], **({"intent": spec["intent"]} if spec["intent"] else {}),
                 **({"key": spec["key"]} if spec["key"] else {})}
@@ -520,6 +540,8 @@ class Session:
         elif spec["press_enter"]:
             note = ("Enter skipped: the field is not structurally a search field; "
                     "pick a suggestion or the site's search control from the observation")
+        if spec["wait_ms"]:
+            driver.pump(spec["wait_ms"])
         self._settle(driver, 5000)
         result = self._done(driver, {"action": "search"}, target=live, prior_epoch=epoch)
         if note:
