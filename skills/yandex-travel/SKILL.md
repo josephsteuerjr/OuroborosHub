@@ -91,15 +91,18 @@ anything else.
 
 ### Reusable research session (not an installed-skill test)
 
-For an owner-present development probe, `scripts/research_session.py` replaces
-the task-local `eats_live.py` and `eats_call.py` files. Start it **once** as a
+For an owner-present development probe, the **Hub checkout's operator script**
+`scripts/yandex_eats_research_session.py` replaces the task-local `eats_live.py`
+and `eats_call.py` files. It is outside the skill payload and catalog: its
+explicit profile/state paths are operator inputs, not installed-skill access.
+From that Hub checkout, start it **once** as a
 tracked service using the Python environment that has Playwright, an explicitly
 chosen existing private profile and a private state directory outside Git:
 
 ```text
-python scripts/research_session.py --state-dir <private-session-dir> serve --profile <owner-selected-profile>
-python scripts/research_session.py --state-dir <same-dir> call open '{}'
-python scripts/research_session.py --state-dir <same-dir> call search '{"query":"..."}'
+python scripts/yandex_eats_research_session.py --state-dir <private-session-dir> serve --profile <owner-selected-profile>
+python scripts/yandex_eats_research_session.py --state-dir <same-dir> call open '{}'
+python scripts/yandex_eats_research_session.py --state-dir <same-dir> call search '{"query":"..."}'
 ```
 
 The first command only publishes a loopback endpoint; Chrome launches at
@@ -117,7 +120,9 @@ is not an alternate installed entry point or a credential migration.
 Check the chosen interpreter's Playwright import once before `serve`; reuse
 that interpreter and the same state directory for subsequent `call` commands.
 The CLI prints the structured result and exits nonzero for refused, unavailable,
-login-required, lost-session or unknown-effect results. Read it before deciding
+login-required, outside/changed page, empty-after-wait, lost-session or unknown-effect results.
+An input can have been performed even when the subsequent page is incomplete;
+read the structured effect and current page before deciding
 what to do; an unsuccessful call must not cause a blind repeat of an input.
 
 Combine only steps whose target and outcome are mechanically determined:

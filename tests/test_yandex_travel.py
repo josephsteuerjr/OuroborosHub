@@ -36,7 +36,7 @@ _spec.loader.exec_module(plugin)
 core = sys.modules[f"{_PACKAGE}.eats_session"]
 driver_module = importlib.import_module(f"{_PACKAGE}.eats_driver")
 _research_spec = importlib.util.spec_from_file_location("yandex_research_controller",
-                                                       SKILL / "scripts" / "research_session.py")
+                                                       SKILL.parents[1] / "scripts" / "yandex_eats_research_session.py")
 research = importlib.util.module_from_spec(_research_spec)
 _research_spec.loader.exec_module(research)
 
@@ -573,6 +573,21 @@ class ProfileTests(SessionCase):
         self.assertEqual(json.loads(output.getvalue())["status"], "companion_unavailable")
         self.assertIn("start serve once", json.loads(output.getvalue())["reason"])
         self.assertFalse(session_dir.exists())
+
+    def test_research_cli_nonzero_for_incomplete_page_without_repeating_input(self):
+        from unittest.mock import patch
+        for reply, expected in (({"status": "done", "effect": "performed", "page_status": "login_required"}, 1),
+                                ({"status": "done", "page_status": "outside_service"}, 1),
+                                ({"status": "done", "page_status": "page_changed"}, 1),
+                                ({"status": "error", "effect": "unknown"}, 1),
+                                ({"status": "ok", "readiness": "empty_after_wait"}, 1),
+                                ({"status": "done", "observation": {"text": "actual state"}}, 0),
+                                ({"status": "closed"}, 0)):
+            with self.subTest(reply=reply), patch.object(research, "call", return_value=reply) as request:
+                with redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(research.main(["--state-dir", str(self.state), "call", "open"]), expected)
+                self.assertEqual(json.loads(output.getvalue()), reply)
+                request.assert_called_once()
 
     def test_research_profile_is_checked_before_creating_state_and_cannot_overlap_it(self):
         same = self.state / "same"

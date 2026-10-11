@@ -16,7 +16,7 @@ import signal
 import stat
 import sys
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills" / "yandex-travel"
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
@@ -63,7 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             result["reason"] = ("this research session is not running; start serve once with the same "
                                 "private state directory and an explicitly selected profile")
         print(json.dumps(result, ensure_ascii=False))
-        return 0 if result.get("status") in {"ok", "done", "closed", "captured_private"} else 1
+        successful = (result.get("status") in {"ok", "done", "closed", "captured_private"}
+                      and result.get("page_status", "ok") == "ok"
+                      and result.get("readiness") != "empty_after_wait")
+        return 0 if successful else 1
     try:
         profile = existing_profile(args.profile)
     except (OSError, ValueError) as exc:
