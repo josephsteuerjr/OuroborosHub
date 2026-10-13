@@ -2197,6 +2197,161 @@
           "sha256": "1109872bccdcd5064442a3880cbaf8d77fbb052a09b6e2f940d1dc8f2ce02ce7"
         }
       ]
+    },
+    {
+      "description": "Optional second Telegram Bot API transport for exact forum-topic Presence, separate from the owner command bot.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "087a6dbf7639a2739590ead09a3142e80088804fba8a09a7f3d67fdfad6115d8",
+          "size": 4206
+        },
+        {
+          "path": "bot/__init__.py",
+          "sha256": "654a16ca36ebebb2985e1954864c55b8d7a45b789431c67aeed51b342c13c61c",
+          "size": 72
+        },
+        {
+          "path": "bot/config.py",
+          "sha256": "1475d46501e294b6f717bce5f7ce3f173c233b593fd737b9713f8155b7f02d29",
+          "size": 2896
+        },
+        {
+          "path": "bot/host.py",
+          "sha256": "f0107266dc006077577e833b62352c8513919eb100ae16ad749f8124cbf11888",
+          "size": 6062
+        },
+        {
+          "path": "bot/media.py",
+          "sha256": "2464830318361072f35bdec8a7963a35f958915ac1d12645eb46610c041a3ba8",
+          "size": 9319
+        },
+        {
+          "path": "bot/runtime.py",
+          "sha256": "830272e451eaa67c132160ee3acfdb11cf2757fee7092e76c4c47c37f9869e7e",
+          "size": 12984
+        },
+        {
+          "path": "bot/store.py",
+          "sha256": "3712f1a411e2308d53694676c9f57af3c0fb393c9f05f68c5cbeff5f5eec1019",
+          "size": 11813
+        },
+        {
+          "path": "bot/transport.py",
+          "sha256": "dc3f69e5ce34467063590e62746033ec6bc1d8c476be18894fcd0795a2982fe2",
+          "size": 6000
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "3d579d4b645a278748d99364a0e7e36bb73e36bd3f04199449eb46105b26b920",
+          "size": 4241
+        },
+        {
+          "path": "scripts/companion.py",
+          "sha256": "1c8d979151b834360b77273c0b59e5571df3a4cb96336b9e476451f9e6b238f4",
+          "size": 1256
+        },
+        {
+          "path": "tests/test_presence_bot.py",
+          "sha256": "bccbfdce34d0c91ba6a3f25c894cd7717ddc68341b79485b41ac10510d76ae92",
+          "size": 26021
+        }
+      ],
+      "name": "telegram-presence-bot",
+      "slug": "telegram-presence-bot",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The owner explicitly configures a second, distinct Telegram bot and exact Presence bindings for selected chats/topics."
+    },
+    {
+      "description": "Explicitly configured Telegram user-account conversations through MTProto and Ouroboros Presence.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "67c7de38532469cfd711bfb80da9cc68e2fc22185c625d8fb7baf65f0c822d6a",
+          "size": 13276
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "50eba28bcfa977fdfec3c812ef555377fb23932aa08cca0a7c144e81e7d4a9f9",
+          "size": 45702
+        },
+        {
+          "path": "scripts/companion.py",
+          "sha256": "5c0f7a1967c67ff36bc3b8c7a4b35569c17089acebfacf55d77be755572f18dc",
+          "size": 16036
+        },
+        {
+          "path": "tests/test_user_media.py",
+          "sha256": "391d904cbedd106d2c3b76d44a8aad33147fe6190aa67e8006c96de82ad015b0",
+          "size": 21651
+        },
+        {
+          "path": "userbot/__init__.py",
+          "sha256": "281895169681b5ee5645cad05545a7c89aadb81ae8e9fc330aee79adb503d38c",
+          "size": 71
+        },
+        {
+          "path": "userbot/action_store.py",
+          "sha256": "dec3dffe26196c976fe9312425988ca52f2149f1c371e76cab45558b1898dc27",
+          "size": 15836
+        },
+        {
+          "path": "userbot/actions.py",
+          "sha256": "3d638e989cb2de894db240e32833bc296801aa03366844f2eed2eacb18bae949",
+          "size": 8964
+        },
+        {
+          "path": "userbot/config.py",
+          "sha256": "89716ab9c7731e81cd676eeba4285dfb12e3aee305e79037e940115a847cb1ca",
+          "size": 21028
+        },
+        {
+          "path": "userbot/dossier.py",
+          "sha256": "0f3f2f9b1418e1c993bdae6423d934d3927dbaf6ead59a79dc66f00d8f2f47fc",
+          "size": 9744
+        },
+        {
+          "path": "userbot/media_inbox.py",
+          "sha256": "35725db059302797c815f045fc327f79edf37f3de1542cdd2281c8652be944cd",
+          "size": 12017
+        },
+        {
+          "path": "userbot/media_transcribe.py",
+          "sha256": "260bcc3e38f91083a6b72e769855361c07f0c813eef0244c79d4ef8d42400b79",
+          "size": 2845
+        },
+        {
+          "path": "userbot/presence.py",
+          "sha256": "931668fc9bb024f66fd401c73f8e8f55b7cf8f324db81c6f148a6bc3b3ffb868",
+          "size": 17084
+        },
+        {
+          "path": "userbot/runtime.py",
+          "sha256": "5c1e61c348272b5bc98222570c10dd48bba5e97f722d6a43fdfb2001c85aef0f",
+          "size": 55199
+        },
+        {
+          "path": "userbot/store.py",
+          "sha256": "c4833c5937cb16be0a00df0e4f586891e01f087aa2840cb88c6435c419b5b730",
+          "size": 34822
+        },
+        {
+          "path": "userbot/telegram.py",
+          "sha256": "d4aabc067278329ccab042e38bb5b17ad6586dfd51a9f3db7e3a68ad74f623ec",
+          "size": 13665
+        },
+        {
+          "path": "userbot/topic.py",
+          "sha256": "0fe6b05804e02f179b786645ee07bcd96c7924261d30440ab5587dfb611f00ab",
+          "size": 5125
+        }
+      ],
+      "name": "telegram-user-session",
+      "slug": "telegram-user-session",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The owner has explicitly enabled a user-account Telegram session and selected this transport's scoped tools or Presence binding."
     }
   ]
 }
