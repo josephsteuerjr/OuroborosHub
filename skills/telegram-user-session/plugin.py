@@ -480,6 +480,10 @@ def _make_config_route(api: Any):
 
 def _make_login_route(api: Any):
     async def route(request: Any):
+        if request.method == "GET":
+            # Hydration probe: no saved values to prefill (one-shot secrets);
+            # an empty object keeps the section enabled instead of degraded.
+            return _response({})
         try:
             body = await _request_body(request, {"code", "password"})
             if load_config(_state_dir(api)) is None:
@@ -508,6 +512,10 @@ def _make_login_route(api: Any):
 
 def _make_request_code_route(api: Any):
     async def route(request: Any):
+        if request.method == "GET":
+            # The host's settings hydration probe reads current values with a
+            # bodyless GET; an empty object means "defaults", keeping Save on.
+            return _response({})
         try:
             await _request_body(request, set())
         except PluginInputError:
@@ -793,8 +801,8 @@ def register(api: Any) -> None:
         }, "required": ["peer_id", "user_id", "confirm"], "additionalProperties": False},
     )
     api.register_route("setup/config", handler=_make_config_route(api), methods=("GET", "POST"))
-    api.register_route("setup/request_code", handler=_make_request_code_route(api), methods=("POST",))
-    api.register_route("setup/login", handler=_make_login_route(api), methods=("POST",))
+    api.register_route("setup/request_code", handler=_make_request_code_route(api), methods=("GET", "POST"))
+    api.register_route("setup/login", handler=_make_login_route(api), methods=("GET", "POST"))
     # No online reset: a companion may be physically requesting a login code
     # while the inflight marker exists. Manual recovery requires stopping the
     # companion, reconciling that request, THEN clearing markers offline.

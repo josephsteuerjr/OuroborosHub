@@ -2206,8 +2206,8 @@
       "files": [
         {
           "path": "plugin.py",
-          "sha256": "3d4de0e670d0c37b3e12dd76804ae0bb74555f6f187c6519e90ec0155f1d72d8",
-          "size": 44536
+          "sha256": "7a78c348ba2092b3834da710bb956e18895eff5a9156ad72eb5529c7ea6f0395",
+          "size": 44998
         },
         {
           "path": "scripts/companion.py",
@@ -2216,8 +2216,8 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "80bc1d7018438f63e002952ab08749968fff1b5c997c41bbae0903e2e5964c2b",
-          "size": 11194
+          "sha256": "9445c71d5e2f8b9eded90929245bcd24e2fd1e5b0f44babce05787a03d0fe05b",
+          "size": 11316
         },
         {
           "path": "userbot/__init__.py",

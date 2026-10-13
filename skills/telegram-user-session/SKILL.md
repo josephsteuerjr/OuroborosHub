@@ -7,7 +7,13 @@ entry: plugin.py
 plugin_api: "2.0"
 runtime: python3
 permissions: [net, tool, route, widget, presence, companion_process]
-dependencies: [telethon==1.45.0]
+dependencies:
+  - kind: pip
+    package: telethon==1.45.0
+    allow_source_build: true
+    check:
+      argv: [python, -c, "import telethon"]
+      cwd: .
 when_to_use: The owner has explicitly enabled a user-account Telegram session and selected this transport's scoped tools or Presence binding.
 model_experience:
   what_model_sees: Explicitly scoped text/action intent/status and opt-in dossier tools; inbound third-party messages arrive only through owner-created exact Presence bindings, never as owner instructions.
