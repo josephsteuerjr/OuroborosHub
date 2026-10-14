@@ -2203,8 +2203,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "67a10804dcaad85618a64103bf575dee9755e911beb0a02e3b4260573415c1af",
-          "size": 4814
+          "sha256": "a4222e32ba17003e48400cebce183be4674f1923fc407e1c2f526a98991ddf7b",
+          "size": 5046
         },
         {
           "path": "bot/__init__.py",
@@ -2268,8 +2268,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "c26d8257380024b194745b3d2f9870d5c81f2b2fed4aa27b8812716ae5351bf9",
-          "size": 14558
+          "sha256": "f186aa338b0a91ac1c044e996e7cce7061d5e29e128ce5adc8d8ac65083c0180",
+          "size": 14840
         },
         {
           "path": "plugin.py",
@@ -2283,8 +2283,8 @@
         },
         {
           "path": "tests/test_user_media.py",
-          "sha256": "422f83f64f3d86c39f56edc4efdccf462e9114880d3667c7dc304840f1228a5e",
-          "size": 31185
+          "sha256": "2b0b11a5c8c0fda3bfc24f1362979f5b761a3dc5f2f643d60d7fc779c643a677",
+          "size": 34596
         },
         {
           "path": "userbot/__init__.py",
@@ -2328,8 +2328,8 @@
         },
         {
           "path": "userbot/runtime.py",
-          "sha256": "f225dc8a2178a87905d17c86122084aa3e770f1a7cecfb4097793b7fcb3d5bc8",
-          "size": 59559
+          "sha256": "366a551f6b1d4c198f473441ffba610d6f4dad741a76dd17d52372454fff5936",
+          "size": 60908
         },
         {
           "path": "userbot/store.py",
@@ -2338,8 +2338,8 @@
         },
         {
           "path": "userbot/telegram.py",
-          "sha256": "d4aabc067278329ccab042e38bb5b17ad6586dfd51a9f3db7e3a68ad74f623ec",
-          "size": 13665
+          "sha256": "a652ca60a749d9c3b1c09f12ce86f9acdf0006f11487c9905986bf2370925e6d",
+          "size": 14100
         },
         {
           "path": "userbot/topic.py",

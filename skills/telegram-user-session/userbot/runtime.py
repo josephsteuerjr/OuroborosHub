@@ -208,6 +208,17 @@ class UserSessionBridge:
         return presence.turn(event, delivery_reporting_version=self.delivery_reporting_version,
                              staged_files=[str(staged)] if staged else None)
 
+    def _transcribe_if_current(self, presence: PresenceClient, *, peer: int,
+                               topic: int | None, binding_id: str, revision: str,
+                               audio: bytes, mime: str) -> tuple[str, str]:
+        # The preceding media/catalog reads may have waited. A source may be
+        # captured privately after revocation, but not submitted to Host STT.
+        if not self._current_enrollment(peer, topic, binding_id, revision):
+            raise EnrollmentRevoked("binding revoked before Host transcription")
+        return presence.transcribe_media(account_id=self.config.account_id,
+                                         peer_id=peer, topic_id=topic,
+                                         audio=audio, mime=mime)
+
     def _presence_for(self, binding_id: str) -> PresenceClient:
         if getattr(self.presence, "binding_id", binding_id) == binding_id:
             return self.presence
@@ -551,10 +562,15 @@ class UserSessionBridge:
                     presence = self._presence_for(binding_id)
                     if staged and media["kind"] in {"voice", "audio"}:
                         if "transcription" not in raw:
-                            transcript, code = await asyncio.to_thread(
-                                presence.transcribe_media, account_id=self.config.account_id,
-                                peer_id=peer, topic_id=topic, audio=staged[0].read_bytes(),
-                                mime=media["mime"])
+                            try:
+                                transcript, code = await asyncio.to_thread(
+                                    self._transcribe_if_current, presence, peer=peer, topic=topic,
+                                    binding_id=binding_id, revision=raw["binding_revision"],
+                                    audio=staged[0].read_bytes(), mime=media["mime"])
+                            except EnrollmentRevoked:
+                                raw["failure_code"] = "BINDING_OR_PERMISSION_CHANGED"
+                                await self._hold_unbound(raw, path, filename)
+                                continue
                             raw["transcription"] = {"status": code, "text": transcript}
                             _atomic_json(path, raw)  # freeze before first Host Presence POST
                         t = raw["transcription"]
@@ -793,7 +809,10 @@ class UserSessionBridge:
         try:
             result = await self.adapter.send_text(job.peer_id, payload["text"],
                                                   random_id=marked.random_id,
-                                                  topic_id=job.topic_id, reply_id=job.reply_id)
+                                                  topic_id=job.topic_id, reply_id=job.reply_id,
+                                                  authorize=lambda: self._current_enrollment(
+                                                      job.peer_id, job.topic_id,
+                                                      payload["binding_id"]))
         except (AmbiguousSend, LoginRequired):
             # The sent boundary was crossed; even a login error here does not
             # authorize a fresh random_id. Lease expiry/startup makes UNKNOWN.

@@ -645,6 +645,97 @@ def test_revocation_during_send_preflight_prevents_physical_send(tmp_path):
         store.close()
 
 
+def test_revocation_during_catalog_wait_prevents_host_transcription(tmp_path):
+    bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
+    message = _message(kind="voice", data=b"OggS-voice")
+    adapter.client = _Client(message, b"OggS-voice")
+    path = bridge.spool_update(_event(message))
+    entered, release = asyncio.Event(), asyncio.Event()
+    transcriptions = []
+
+    async def topic_ids(_peer):
+        entered.set()
+        await release.wait()
+        return None
+
+    def transcribe(**kwargs):
+        transcriptions.append(kwargs)
+        raise AssertionError("revoked audio reached Host transcriber")
+
+    adapter.topic_ids = topic_ids
+    presence.transcribe_media = transcribe
+
+    async def race():
+        task = asyncio.create_task(bridge.process_incoming())
+        await asyncio.wait_for(entered.wait(), 5)
+        save_config(tmp_path, Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                                    allowed_peer_ids=(-1001,), account_id=123,
+                                    binding_id="b" * 32))
+        release.set()
+        return await task
+
+    try:
+        assert asyncio.run(race()) == 0
+        assert path.with_suffix(".held").exists() and not transcriptions and not presence.calls
+        assert bridge.media.ready_file(path.name)[0].read_bytes() == b"OggS-voice"
+    finally:
+        store.close()
+
+
+def test_real_mtproto_send_rechecks_after_entity_resolution(tmp_path):
+    from userbot.telegram import TelegramAdapter
+
+    bridge, store, _adapter, _presence = _bridge(tmp_path, bound=True)
+    bridge._queue_reply({"peer_id": -1001, "message_id": 12}, None, "a" * 32,
+                        "reply", 1, "source-event", "turn")
+    entered, release = asyncio.Event(), asyncio.Event()
+    physical = []
+
+    class Client:
+        async def get_messages(self, _peer, *, ids):
+            return SimpleNamespace(id=ids)
+
+        async def get_input_entity(self, _peer):
+            entered.set()
+            await release.wait()
+            return object()
+
+        async def is_user_authorized(self):
+            return True
+
+        async def __call__(self, request):
+            physical.append(request)
+            raise AssertionError("revoked message reached MTProto")
+
+    adapter = TelegramAdapter(tmp_path / "mtproto.session", 123, "a" * 32, client=Client())
+
+    async def topic_ids(_peer):
+        return None
+
+    adapter.topic_ids = topic_ids
+    bridge.adapter = adapter
+
+    async def race():
+        task = asyncio.create_task(bridge.send_one())
+        await asyncio.wait_for(entered.wait(), 5)
+        save_config(tmp_path, Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                                    allowed_peer_ids=(-1001,), account_id=123,
+                                    binding_id="b" * 32))
+        release.set()
+        return await task
+
+    try:
+        assert asyncio.run(race()) is True
+        assert not physical
+        # The intent crossed its durable attempted boundary, so recovery
+        # conservatively reports UNKNOWN even though this test saw no send.
+        assert store.db.execute("SELECT status FROM outgoing").fetchone()[0] == "attempted"
+    finally:
+        store.close()
+    with DurableStore(tmp_path / "transport.sqlite3", recover_attempted=True) as recovered:
+        assert recovered.db.execute("SELECT status FROM outgoing").fetchone()[0] == "unknown"
+
+
 def test_action_rechecks_owner_after_second_target_await(tmp_path, monkeypatch):
     from telethon import types
     from userbot import actions as action_module

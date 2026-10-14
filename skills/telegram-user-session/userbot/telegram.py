@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class LoginRequired(Exception):
@@ -145,6 +145,7 @@ class TelegramAdapter:
         random_id: int,
         topic_id: int | None = None,
         reply_id: int | None = None,
+        authorize: Callable[[], bool] | None = None,
     ) -> SendResult:
         """Send one plain-text message using caller-persisted random_id.
 
@@ -185,6 +186,11 @@ class TelegramAdapter:
         peer = await self.client.get_input_entity(peer_id)
         if not await self.client.is_user_authorized():
             raise LoginRequired("Telegram session is not authorized")
+        # Entity/auth reads can suspend across an owner revoke. This caller's
+        # current mapping must still authorize the frozen intent at the exact
+        # physical send boundary; no await separates this check from __call__.
+        if authorize is not None and authorize() is not True:
+            raise ValueError("owner binding revoked before Telegram send")
         request = SendMessageRequest(
             peer=peer, message=text, random_id=random_id, reply_to=reply_to,
         )
