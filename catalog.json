@@ -2203,8 +2203,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "1e1420426eb17dded65b1e9f59748cb2877dfa6c9a1d491f18f78e9a3e840436",
-          "size": 4374
+          "sha256": "6c9b0947184bd26126eb892edd583d4ddc31d11872326d8bd14af271645d91ee",
+          "size": 4568
         },
         {
           "path": "bot/__init__.py",
@@ -2228,13 +2228,13 @@
         },
         {
           "path": "bot/runtime.py",
-          "sha256": "3932ea86051ba47df8498c34a611ac901f7d44d048e2be713a7927bcd2d2a7cc",
-          "size": 13230
+          "sha256": "a5900b196c203d0d32facd63a194d9d22f81545c8d2de939318a05b10f215467",
+          "size": 13441
         },
         {
           "path": "bot/store.py",
-          "sha256": "2a361d1308f3fd30517308973289793b792880a9029b3948f8533d13a7e0a9d0",
-          "size": 12995
+          "sha256": "6932565b206e30899dc4281b0b91bdbb37907d203039c1949daead3cf869c409",
+          "size": 13461
         },
         {
           "path": "bot/transport.py",
@@ -2253,8 +2253,8 @@
         },
         {
           "path": "tests/test_presence_bot.py",
-          "sha256": "914b5a171c5e9441869602de0ee6272af7ceafdf3c37aab1471dfe2ca403130d",
-          "size": 27230
+          "sha256": "13abeb906f4757ca446d41395fddb31b06fcc479f2b765c5d501129304deb6fd",
+          "size": 29050
         }
       ],
       "name": "telegram-presence-bot",
@@ -2283,8 +2283,8 @@
         },
         {
           "path": "tests/test_user_media.py",
-          "sha256": "77cae77ed5d61067e7462eaf65a482c3565dc86574a2d1354f83e964331a880c",
-          "size": 25073
+          "sha256": "d2cddd64bf5ba7f5e4e9be38457589eb24011be4cc93cc60f60ada77a1bcbbc1",
+          "size": 25931
         },
         {
           "path": "userbot/__init__.py",
@@ -2328,8 +2328,8 @@
         },
         {
           "path": "userbot/runtime.py",
-          "sha256": "29f0d67a98354d1a936a9468f9862e32bd17cdafc73ebe26244de1381b002929",
-          "size": 55884
+          "sha256": "f887f34e252a03dace4856ac22b28a30c50394493308638d8e572de0fc8e3bcb",
+          "size": 56062
         },
         {
           "path": "userbot/store.py",

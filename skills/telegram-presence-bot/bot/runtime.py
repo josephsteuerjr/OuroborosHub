@@ -74,6 +74,8 @@ def _media_text(message: dict, receipt: dict | None, transcript: dict) -> str:
         if receipt["kind"] in {"voice", "audio"}:
             if transcript.get("status") == "ready":
                 text += "\n[Local audio transcription: " + transcript["text"] + "]"
+            elif transcript.get("status") == "no_speech":
+                text += "\n[No speech detected in local audio; source file retained.]"
             else:
                 text += "\n[Local audio transcription unavailable: " + transcript.get("status", "not_run") + "]"
     return text
@@ -106,7 +108,7 @@ def process_one(row: dict, *, account: int, config: dict, store: Store,
         return False, chat_id
     chat, topic, mid, actor = route
     binding = binding_for(config, chat, topic)
-    if binding is None or (row["binding_id"] and row["binding_id"] != binding):
+    if binding is None or row["binding_id"] != binding:
         store.settle(uid, held=True)
         return False, chat
     store.freeze_binding(uid, binding)
@@ -236,11 +238,12 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
                 selected = source_message(update)
                 message = selected[0] if selected else {}
                 route = identity(message, bot_id=account) if selected else None
+                selected_binding = binding_for(config, route[0], route[1]) if route else None
                 media_keys = {"photo", "voice", "audio", "video", "video_note", "document",
                               "sticker", "animation", "paid_media", "story"}
                 if (describe(message) is not None or media_keys.intersection(message)
-                        or route and binding_for(config, route[0], route[1])):
-                    store.capture(update)
+                        or selected_binding):
+                    store.capture(update, binding_id=selected_binding)
                 else:
                     store.skip_unbound_text(update)
             blocked_chats: set[int] = set()

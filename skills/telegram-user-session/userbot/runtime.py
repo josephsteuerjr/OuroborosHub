@@ -524,9 +524,12 @@ class UserSessionBridge:
                             raw["transcription"] = {"status": code, "text": transcript}
                             _atomic_json(path, raw)  # freeze before first Host Presence POST
                         t = raw["transcription"]
-                        media_text += ("\n[Local audio transcription: " + t["text"] + "]"
-                                       if t["status"] == "ready" else
-                                       "\n[Local audio transcription unavailable: " + t["status"] + "]")
+                        if t["status"] == "ready":
+                            media_text += "\n[Local audio transcription: " + t["text"] + "]"
+                        elif t["status"] == "no_speech":
+                            media_text += "\n[No speech detected in local audio; source file retained.]"
+                        else:
+                            media_text += "\n[Local audio transcription unavailable: " + t["status"] + "]"
                     event = build_event(self.config.account_id, raw["peer_id"],
                                         raw["message_id"], raw["actor_id"], media_text,
                                         topic_id=topic, event_kind=raw["kind"],

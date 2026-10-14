@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -81,7 +82,13 @@ class Store:
                 raise ValueError("bot account changed; inspect private inbox before reset")
             self.db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('account_id',?)", (account_id,))
 
-    def capture(self, update: dict) -> str:
+    def capture(self, update: dict, *, binding_id: str | None = None) -> str:
+        # Freeze the exact owner mapping in the same transaction as this update.
+        # "unbound" is a private capture, never authority gained by a later edit.
+        if binding_id is not None and (type(binding_id) is not str or
+                re.fullmatch(r"[0-9a-fA-F]{32}", binding_id) is None):
+            raise ValueError("invalid capture binding")
+        frozen = binding_id if binding_id is not None else "unbound"
         uid = update.get("update_id") if type(update) is dict else None
         if type(uid) is not int or uid < 0:
             raise ValueError("Bot API update lacks numeric identity")
@@ -99,8 +106,8 @@ class Store:
             count = self.db.execute("SELECT count(*) FROM inbound WHERE status IN ('pending','held')").fetchone()[0]
             if count >= MAX_PENDING:
                 raise InboxFull("private inbox reached 1000 pending/held updates")
-            self.db.execute("INSERT INTO inbound(update_id,digest,body,status) VALUES (?,?,?,'pending')",
-                            (uid, digest, body))
+            self.db.execute("""INSERT INTO inbound(update_id,digest,body,status,binding_id)
+                VALUES (?,?,?,'pending',?)""", (uid, digest, body, frozen))
             self.db.execute("""INSERT INTO meta(key,value) VALUES ('offset',?)
                 ON CONFLICT(key) DO UPDATE SET value=max(value,excluded.value)""", (uid + 1,))
         return "pending"
@@ -116,7 +123,7 @@ class Store:
             self.db.execute("BEGIN IMMEDIATE")
             row = self.db.execute("SELECT binding_id,work_ref FROM inbound WHERE update_id=? AND status='pending'",
                                   (uid,)).fetchone()
-            if not row or row["binding_id"] not in ("", binding) or row["work_ref"] not in ("", work_ref):
+            if not row or row["binding_id"] != binding or row["work_ref"] not in ("", work_ref):
                 raise ValueError("Presence work identity changed")
             self.db.execute("UPDATE inbound SET binding_id=?,work_ref=? WHERE update_id=?",
                             (binding, work_ref, uid))
@@ -142,7 +149,7 @@ class Store:
             self.db.execute("BEGIN IMMEDIATE")
             row = self.db.execute("SELECT binding_id FROM inbound WHERE update_id=? AND status='pending'",
                                   (uid,)).fetchone()
-            if not row or row["binding_id"] not in ("", binding):
+            if not row or row["binding_id"] != binding:
                 raise ValueError("Presence binding changed")
             self.db.execute("UPDATE inbound SET binding_id=? WHERE update_id=?", (binding, uid))
 

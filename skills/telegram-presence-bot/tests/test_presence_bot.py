@@ -384,7 +384,7 @@ def test_old_unsupported_transcription_holds_ambiguous_bot_turn(tmp_path):
         "sha256": hashlib.sha256(b"OggS-old-audio").hexdigest(),
     }))
     with Store(tmp_path / "transport.sqlite3") as store:
-        store.capture(event)
+        store.capture(event, binding_id="a" * 32)
         store.freeze_transcript(1, {"status": "audio_unsupported", "text": ""})
     host = _Host()
     run(tmp_path, bot=_Bot([event]), host=host, max_polls=1)
@@ -656,3 +656,39 @@ def test_overlong_host_reply_is_held_without_stopping_other_intake(tmp_path, out
     assert len(host.turns) == 1 and not any(method == "sendMessage" for method, _ in bot.calls)
     run(tmp_path, bot=bot, host=host, max_polls=1)
     assert len(host.turns) == 1  # restart cannot replay this overlong reply
+
+
+@pytest.mark.parametrize("bound_at_capture", [True, False])
+def test_mapping_is_frozen_with_update_before_presence_processing(tmp_path, bound_at_capture):
+    from bot.config import empty, save
+
+    a, b = "a" * 32, "b" * 32
+    if bound_at_capture:
+        _cfg(tmp_path)  # exact -1001 / topic 42 mapped to A
+    else:
+        save(tmp_path, empty())  # capture media privately without any Presence right
+    update = _update(1)
+    with Store(tmp_path / "transport.sqlite3") as store:
+        assert store.capture(update, binding_id=a if bound_at_capture else None) == "pending"
+        row = store.db.execute("SELECT binding_id FROM inbound WHERE update_id=1").fetchone()
+        assert row["binding_id"] == (a if bound_at_capture else "unbound")
+    changed = empty()
+    changed["bindings"] = [{"chat_id": -1001, "topic_id": 42, "binding_id": b}]
+    save(tmp_path, changed)
+    bot, host = _Bot([update]), _Host()
+    run(tmp_path, bot=bot, host=host, max_polls=1)
+    assert not host.turns and not any(method == "sendMessage" for method, _ in bot.calls)
+    with Store(tmp_path / "transport.sqlite3") as store:
+        row = store.db.execute("SELECT status,binding_id,body FROM inbound WHERE update_id=1").fetchone()
+        assert row["status"] == "held" and row["body"]
+        assert row["binding_id"] == (a if bound_at_capture else "unbound")
+    assert (tmp_path / "media" / "1.jpg").read_bytes() == PHOTO  # private bytes retained
+
+
+def test_silent_audio_is_not_misreported_as_missing_transcriber():
+    from bot.runtime import _media_text
+
+    event = {"message_id": 12}
+    receipt = {"kind": "voice", "status": "ready"}
+    text = _media_text(event, receipt, {"status": "no_speech", "text": ""})
+    assert "No speech detected" in text and "transcription unavailable" not in text

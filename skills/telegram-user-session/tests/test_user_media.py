@@ -559,3 +559,21 @@ def test_missing_private_source_after_durable_capture_never_rebinds_on_redeliver
         assert asyncio.run(bridge.process_incoming()) == 0 and not presence.calls
     finally:
         store.close()
+
+
+def test_bound_silent_audio_keeps_source_and_names_silence_not_unavailability(tmp_path):
+    bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
+    message = _message(kind="voice", data=b"OggS-silence")
+    adapter.client = _Client(message, b"OggS-silence")
+    presence.transcribe_media = lambda **_kwargs: ("", "no_speech")
+    path = bridge.spool_update(_event(message))
+    try:
+        assert asyncio.run(bridge.process_incoming()) == 1
+        assert len(presence.calls) == 1
+        event, options = presence.calls[0]
+        assert "No speech detected" in event["text"]
+        assert "transcription unavailable" not in event["text"]
+        assert Path(options["staged_files"][0]).read_bytes() == b"OggS-silence"
+        assert bridge.media.ready_file(path.name)[0].read_bytes() == b"OggS-silence"
+    finally:
+        store.close()
