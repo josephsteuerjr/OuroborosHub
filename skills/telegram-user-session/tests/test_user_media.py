@@ -91,6 +91,7 @@ def test_raw_capture_orders_unbound_media_and_rejects_changed_replay(tmp_path):
             "forum_topic": True, "reply_to_top_id": 42, "reply_to_msg_id": 42,
             "action_constructor_id": None, "media": {"kind": "photo", "size": 10, "mime": "image/jpeg"}}
     with DurableStore(tmp_path / "inbox.sqlite3") as store:
+        assert store.stage_raw(account, filename, base) == "created"
         assert store.stage_raw(account, filename, base) == "pending"
         seq, name, raw = store.next_raw(account, set())
         assert name == filename and raw["peer_id"] == -1001 and raw["reply_to_top_id"] == 42
@@ -532,5 +533,29 @@ def test_other_peer_edit_keeps_admitted_deferred_work_but_revocation_holds_it(tm
             assert path.with_suffix(".held").exists()
         else:
             assert result == 1 and host.works == 1 and not path.exists()
+    finally:
+        store.close()
+
+
+def test_missing_private_source_after_durable_capture_never_rebinds_on_redelivery(tmp_path):
+    import json
+
+    bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
+    message = _message(kind="photo", data=b"image")
+    event = _event(message)
+    original = bridge.spool_update(event)  # initial DB+file under binding A
+    assert original is not None and original.exists()
+    original.unlink()  # crash/loss across the DB-capture → private-file seam
+    bridge.config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                           allowed_peer_ids=(-1001,), account_id=123, binding_id="b" * 32)
+    try:
+        assert bridge.spool_update(event) is None
+        assert not original.exists() and store.pending_raw_count("123") == 0
+        saved = store.db.execute("SELECT initial_json,status FROM raw_ingress WHERE filename=?",
+                                 (original.name,)).fetchone()
+        assert saved["status"] == "held"
+        assert json.loads(saved["initial_json"])["binding_id"] == "a" * 32
+        assert bridge._ingress_failures[-1001][0] == "RAW_SOURCE_MISSING"
+        assert asyncio.run(bridge.process_incoming()) == 0 and not presence.calls
     finally:
         store.close()

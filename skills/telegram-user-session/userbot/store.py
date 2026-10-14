@@ -268,8 +268,9 @@ class DurableStore:
     def stage_raw(self, account_id: str, filename: str, raw: dict) -> str:
         """Atomically assign capture order to an immutable original event.
 
-        Returns its existing status on redelivery; neither a duplicate nor a
-        file rewrite moves its ordinal. Only the companion invokes this seam.
+        Returns `created` only for this transaction's new row, else its prior
+        status on redelivery; neither a duplicate nor a file rewrite moves its
+        ordinal. Only the companion invokes this seam.
         """
         self._account(account_id)
         if (not isinstance(filename, str) or not re.fullmatch(r"[0-9a-f]{64}\.json", filename)
@@ -299,7 +300,7 @@ class DurableStore:
                 (account_id,filename,peer_id,initial_json,initial_digest,provider_digest,status)
                 VALUES (?,?,?,?,?,?,'pending')""",
                 (account_id, filename, peer, serialized, digest, provider_digest))
-        return "pending"
+        return "created"  # caller alone may materialize a NEW source file
 
     def next_raw(self, account_id: str, blocked_peers: set[int],
                  after_seq: int = 0) -> tuple[int, str, dict] | None:

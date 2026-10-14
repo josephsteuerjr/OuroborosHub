@@ -237,7 +237,7 @@ class UserSessionBridge:
         path = self.state_dir / "incoming" / _source_filename(
             self.config.account_id, peer, mid, kind, revision)
         status = self.store.stage_raw(str(self.config.account_id), path.name, raw)
-        if status != "pending":
+        if status not in ("created", "pending"):
             # A callback replay cannot re-admit a locally settled event.
             if status == "unverifiable":
                 self._ingress_health(peer, "EVENT_UNAVAILABLE")
@@ -252,6 +252,13 @@ class UserSessionBridge:
             if descriptor is not None:
                 self._observed_media[path.name] = message.media
             return path
+        if status != "created":
+            # DB capture survived but its file did not. It may have disappeared
+            # AFTER an uncertain Host turn; reconstructing with today's binding
+            # would re-author the original event as another Presence task.
+            self.store.settle_raw(str(self.config.account_id), path.name, held=True)
+            self._ingress_health(peer, "RAW_SOURCE_MISSING")
+            return None
         _atomic_json(path, raw)
         if descriptor is not None:
             self._observed_media[path.name] = message.media
