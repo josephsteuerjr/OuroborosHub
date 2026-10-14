@@ -692,3 +692,36 @@ def test_silent_audio_is_not_misreported_as_missing_transcriber():
     receipt = {"kind": "voice", "status": "ready"}
     text = _media_text(event, receipt, {"status": "no_speech", "text": ""})
     assert "No speech detected" in text and "transcription unavailable" not in text
+
+
+@pytest.mark.parametrize("change", ["rotate", "remove", "unrelated"])
+def test_longpoll_config_change_cannot_authorize_old_topic_speech(tmp_path, change):
+    from bot.config import empty, save
+
+    _cfg(tmp_path)
+    update = _update(1)
+
+    class EditingBot(_Bot):
+        def api(self, method, payload, **kwargs):
+            if method == "getUpdates":
+                config = empty()
+                if change != "remove":
+                    config["bindings"] = [{"chat_id": -1001, "topic_id": 42,
+                                           "binding_id": ("b" if change == "rotate" else "a") * 32}]
+                if change == "unrelated":
+                    config["bindings"].append({"chat_id": -1002, "topic_id": 42,
+                                               "binding_id": "c" * 32})
+                save(tmp_path, config)  # owner writes during a 25-second longpoll
+            return super().api(method, payload, **kwargs)
+
+    bot, host = EditingBot([update]), _Host()
+    run(tmp_path, bot=bot, host=host, max_polls=1)
+    with Store(tmp_path / "transport.sqlite3") as store:
+        row = store.db.execute("SELECT binding_id,status FROM inbound WHERE update_id=1").fetchone()
+        if change == "unrelated":
+            assert row["binding_id"] == "a" * 32 and row["status"] == "done"
+            assert len(host.turns) == 1 and host.turns[0][0] == "a" * 32
+        else:
+            assert row["binding_id"] == "unbound" and row["status"] == "held"
+            assert not host.turns and not any(method == "sendMessage" for method, _ in bot.calls)
+    assert (tmp_path / "media" / "1.jpg").read_bytes() == PHOTO

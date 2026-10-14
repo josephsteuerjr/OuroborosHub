@@ -226,7 +226,7 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
         polls = 0
         while max_polls is None or polls < max_polls:
             polls += 1
-            config = load(state_dir)
+            before_poll = load(state_dir)
             updates = bot.api("getUpdates", {"offset": store.offset(), "timeout": 25,
                 "limit": 100, "allowed_updates": ["message", "edited_message", "channel_post", "edited_channel_post"]},
                 timeout=35)
@@ -235,15 +235,19 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
             if any(type(item) is not dict or type(item.get("update_id")) is not int for item in updates):
                 raise TransportUnavailable("Bot API update identity unavailable")
             for update in sorted(updates, key=lambda item: item["update_id"]):
+                config = load(state_dir)  # never use a pre-longpoll mapping
                 selected = source_message(update)
                 message = selected[0] if selected else {}
                 route = identity(message, bot_id=account) if selected else None
                 selected_binding = binding_for(config, route[0], route[1]) if route else None
+                stable_binding = (selected_binding if route and
+                                  selected_binding == binding_for(before_poll, route[0], route[1])
+                                  else None)
                 media_keys = {"photo", "voice", "audio", "video", "video_note", "document",
                               "sticker", "animation", "paid_media", "story"}
                 if (describe(message) is not None or media_keys.intersection(message)
                         or selected_binding):
-                    store.capture(update, binding_id=selected_binding)
+                    store.capture(update, binding_id=stable_binding)
                 else:
                     store.skip_unbound_text(update)
             blocked_chats: set[int] = set()
@@ -254,6 +258,7 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
                 if chat in blocked_chats:
                     continue
                 try:
+                    config = load(state_dir)  # recheck after capture, before Host admission
                     pending, chat = process_one(row, account=account, config=config, store=store,
                                                 media=media, bot=bot, host=host)
                 except TransportUnavailable:
@@ -262,5 +267,5 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
                     pending = True
                 if pending and type(chat) is int:
                     blocked_chats.add(chat)
-            send_one(store, config, bot, host, account)
+            send_one(store, load(state_dir), bot, host, account)  # current pre-send authority
             report_sent(store, host, account)

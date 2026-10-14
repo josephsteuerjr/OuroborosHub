@@ -2203,8 +2203,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "6c9b0947184bd26126eb892edd583d4ddc31d11872326d8bd14af271645d91ee",
-          "size": 4568
+          "sha256": "67a10804dcaad85618a64103bf575dee9755e911beb0a02e3b4260573415c1af",
+          "size": 4814
         },
         {
           "path": "bot/__init__.py",
@@ -2228,8 +2228,8 @@
         },
         {
           "path": "bot/runtime.py",
-          "sha256": "a5900b196c203d0d32facd63a194d9d22f81545c8d2de939318a05b10f215467",
-          "size": 13441
+          "sha256": "653a30e8eec3b7e830a0424f3fee71489d7bde4f94e5d785bb83713ee56afe0b",
+          "size": 13861
         },
         {
           "path": "bot/store.py",
@@ -2253,8 +2253,8 @@
         },
         {
           "path": "tests/test_presence_bot.py",
-          "sha256": "13abeb906f4757ca446d41395fddb31b06fcc479f2b765c5d501129304deb6fd",
-          "size": 29050
+          "sha256": "25ec830ab0ea4336b9d7e72840026e1d443222499b91066ab8c9b1c921d33c1a",
+          "size": 30688
         }
       ],
       "name": "telegram-presence-bot",
