@@ -155,6 +155,11 @@ def process_one(row: dict, *, account: int, config: dict, store: Store,
     if response.get("status") != "completed":
         return True, chat
     outcome = response.get("outcome")
+    reply = response.get("text")
+    if (outcome in {"deferred", "message"} and isinstance(reply, str) and reply.strip()
+            and len(reply.encode("utf-8")) > 4096):
+        store.hold_reply_too_long(uid, reply)
+        return False, chat
     if outcome == "deferred":
         if not (returned_work or work):
             store.settle(uid, held=True)

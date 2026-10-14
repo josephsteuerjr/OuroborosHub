@@ -83,12 +83,15 @@ def _source_filename(account_id: int, peer_id: int, message_id: int, kind: str, 
     return hashlib.sha256(source).hexdigest() + ".json"
 
 
-def _binding_revision(config: Any) -> str:
-    """Capture enrollment at ingress; later config edits never rebind old speech."""
-    bindings = [(item.peer_id, item.topic_id, item.binding_id)
-                for item in getattr(config, "bindings", ())]
-    source = json.dumps([config.binding_id, config.allowed_peer_ids, bindings],
-                        ensure_ascii=True, separators=(",", ":"))
+def _binding_revision(config: Any, peer: int) -> str:
+    """Capture only this event's enrollment; another peer cannot strand it."""
+    allowed = peer in config.allowed_peer_ids
+    bindings = [(item.topic_id, item.binding_id)
+                for item in getattr(config, "bindings", ()) if item.peer_id == peer]
+    # Legacy one-peer General loses its authority when a second peer is added.
+    legacy = (config.binding_id if allowed and not config.bindings
+              and len(config.allowed_peer_ids) == 1 else None)
+    source = json.dumps([allowed, legacy, bindings], ensure_ascii=True, separators=(",", ":"))
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
@@ -219,7 +222,7 @@ class UserSessionBridge:
         raw = {
             "account_id": self.config.account_id, "peer_id": peer,
             "binding_id": self.config.binding_id,
-            "binding_revision": _binding_revision(self.config),
+            "binding_revision": _binding_revision(self.config, peer),
             "selected_binding": "",
             "actor_id": actor if type(actor) is int and actor != 0 else None,
             "message_id": mid, "text": text, "media": descriptor,
@@ -429,7 +432,7 @@ class UserSessionBridge:
                         continue
                     raw["media_receipt"] = receipt
                     _atomic_json(path, raw)
-                if raw.get("binding_revision") != _binding_revision(self.config):
+                if raw.get("binding_revision") != _binding_revision(self.config, peer):
                     # A later owner binding cannot inherit a prior binding's
                     # unread Telegram event, even in the same peer.
                     await self._hold_unbound(raw, path, filename)

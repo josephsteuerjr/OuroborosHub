@@ -2203,8 +2203,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "087a6dbf7639a2739590ead09a3142e80088804fba8a09a7f3d67fdfad6115d8",
-          "size": 4206
+          "sha256": "1e1420426eb17dded65b1e9f59748cb2877dfa6c9a1d491f18f78e9a3e840436",
+          "size": 4374
         },
         {
           "path": "bot/__init__.py",
@@ -2228,13 +2228,13 @@
         },
         {
           "path": "bot/runtime.py",
-          "sha256": "830272e451eaa67c132160ee3acfdb11cf2757fee7092e76c4c47c37f9869e7e",
-          "size": 12984
+          "sha256": "3932ea86051ba47df8498c34a611ac901f7d44d048e2be713a7927bcd2d2a7cc",
+          "size": 13230
         },
         {
           "path": "bot/store.py",
-          "sha256": "3712f1a411e2308d53694676c9f57af3c0fb393c9f05f68c5cbeff5f5eec1019",
-          "size": 11813
+          "sha256": "2a361d1308f3fd30517308973289793b792880a9029b3948f8533d13a7e0a9d0",
+          "size": 12995
         },
         {
           "path": "bot/transport.py",
@@ -2253,8 +2253,8 @@
         },
         {
           "path": "tests/test_presence_bot.py",
-          "sha256": "bccbfdce34d0c91ba6a3f25c894cd7717ddc68341b79485b41ac10510d76ae92",
-          "size": 26021
+          "sha256": "914b5a171c5e9441869602de0ee6272af7ceafdf3c37aab1471dfe2ca403130d",
+          "size": 27230
         }
       ],
       "name": "telegram-presence-bot",
@@ -2268,8 +2268,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "67c7de38532469cfd711bfb80da9cc68e2fc22185c625d8fb7baf65f0c822d6a",
-          "size": 13276
+          "sha256": "3d68c58066c48238c5053a7b6f97d44a581b81a12d88c85852f33ba529e64922",
+          "size": 13756
         },
         {
           "path": "plugin.py",
@@ -2283,8 +2283,8 @@
         },
         {
           "path": "tests/test_user_media.py",
-          "sha256": "391d904cbedd106d2c3b76d44a8aad33147fe6190aa67e8006c96de82ad015b0",
-          "size": 21651
+          "sha256": "e5ee3fd85c9f4bff1bde8a025e35824ef2f20852da941d081f1809aa4300f214",
+          "size": 23761
         },
         {
           "path": "userbot/__init__.py",
@@ -2328,8 +2328,8 @@
         },
         {
           "path": "userbot/runtime.py",
-          "sha256": "5c1e61c348272b5bc98222570c10dd48bba5e97f722d6a43fdfb2001c85aef0f",
-          "size": 55199
+          "sha256": "9ba52b18cc6850001ec7544d58e79cb5a229d3fc396e5d405c3a67e3beaf0b85",
+          "size": 55430
         },
         {
           "path": "userbot/store.py",

@@ -629,3 +629,30 @@ def test_orphan_bot_media_temp_counts_against_private_budget(tmp_path, monkeypat
     descriptor = module.describe({"photo": [{"file_id": "photo", "file_size": 3}]})
     with pytest.raises(ValueError, match="byte budget"):
         store.capture(1, descriptor, {"download_video": False, "download_documents": False}, Downloader())
+
+
+@pytest.mark.parametrize("outcome", ["message", "deferred"])
+def test_overlong_host_reply_is_held_without_stopping_other_intake(tmp_path, outcome):
+    import json
+
+    _cfg(tmp_path)
+    bot = _Bot([_update(1)])
+
+    class LongReply(_Host):
+        def turn(self, binding, event, files):
+            self.turns.append((binding, event, files))
+            return {"ok": True, "status": "completed", "outcome": outcome,
+                    "work_ref": "deferred-work" if outcome == "deferred" else "",
+                    "text": "x" * 4097}
+
+    host = LongReply()
+    run(tmp_path, bot=bot, host=host, max_polls=1)
+    with Store(tmp_path / "transport.sqlite3") as store:
+        assert store.counts() == {"held": 1}
+        row = store.db.execute("SELECT body, transcript FROM inbound WHERE update_id=1").fetchone()
+        reason = json.loads(row["transcript"])
+        assert row["body"] and reason["hold_reason"] == "reply_too_long"
+        assert reason["reply_bytes"] == 4097
+    assert len(host.turns) == 1 and not any(method == "sendMessage" for method, _ in bot.calls)
+    run(tmp_path, bot=bot, host=host, max_polls=1)
+    assert len(host.turns) == 1  # restart cannot replay this overlong reply

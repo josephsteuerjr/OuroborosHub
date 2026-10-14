@@ -485,3 +485,52 @@ def test_orphan_temp_bytes_count_against_private_inbox_budget(tmp_path, monkeypa
         asyncio.run(inbox.ensure(_filename(), describe(message),
                                  SimpleNamespace(download_video=False, download_documents=False),
                                  SimpleNamespace(client=_Client(message, b"img")), -1001, 12))
+
+
+@pytest.mark.parametrize("revoke_a", [False, True])
+def test_other_peer_edit_keeps_admitted_deferred_work_but_revocation_holds_it(tmp_path, revoke_a):
+    from userbot.config import Binding
+
+    bridge, store, adapter, _presence = _bridge(tmp_path, bound=True)
+    a, b = "a" * 32, "b" * 32
+    bridge.config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                           allowed_peer_ids=(-1001,), account_id=123,
+                           bindings=(Binding(-1001, None, a),))
+
+    class Deferred:
+        binding_id = a
+
+        def __init__(self):
+            self.turns = self.works = 0
+
+        def turn(self, _event, **_kwargs):
+            self.turns += 1
+            return PresenceResult("completed", outcome="deferred", work_ref="work-A")
+
+        def work(self, _work_ref):
+            self.works += 1
+            return PresenceResult("completed", outcome="silent", work_ref="work-A")
+
+    host = Deferred()
+    bridge.presence = host
+    message = _message(kind="photo", data=b"image")
+    adapter.client = _Client(message, b"image")
+    path = bridge.spool_update(_event(message))
+    try:
+        assert asyncio.run(bridge.process_incoming()) == 0
+        assert path.exists() and host.turns == 1 and host.works == 0
+        raw = __import__("json").loads(path.read_text(encoding="utf-8"))
+        assert raw["selected_binding"] == a and raw["work_ref"] == "work-A"
+        bridge.config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                               allowed_peer_ids=(-1002,) if revoke_a else (-1002, -1001),
+                               account_id=123,
+                               bindings=((Binding(-1002, None, b),) if revoke_a else
+                                         (Binding(-1002, None, b), Binding(-1001, None, a))))
+        result = asyncio.run(bridge.process_incoming())
+        if revoke_a:
+            assert result == 0 and host.works == 0
+            assert path.with_suffix(".held").exists()
+        else:
+            assert result == 1 and host.works == 1 and not path.exists()
+    finally:
+        store.close()

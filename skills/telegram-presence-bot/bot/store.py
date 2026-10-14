@@ -152,6 +152,24 @@ class Store:
             self.db.execute("""UPDATE inbound SET status=?,body=CASE WHEN ? THEN body ELSE '' END
                 WHERE update_id=? AND status='pending'""", ("held" if held else "done", int(held), uid))
 
+    def hold_reply_too_long(self, uid: int, text: str) -> None:
+        """Keep the source update and a bounded reason; never send a partial reply."""
+        if not isinstance(text, str) or len(text.encode("utf-8")) <= 4096:
+            raise ValueError("overlong reply required")
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            row = self.db.execute("SELECT transcript FROM inbound WHERE update_id=? AND status='pending'",
+                                  (uid,)).fetchone()
+            if not row:
+                raise ValueError("inbound event unavailable")
+            retained = json.loads(row["transcript"]) if row["transcript"] else {}
+            if not isinstance(retained, dict):
+                raise ValueError("transcript receipt unavailable")
+            retained.update({"hold_reason": "reply_too_long", "reply_bytes": len(text.encode("utf-8")),
+                             "reply_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()})
+            self.db.execute("UPDATE inbound SET status='held',transcript=? WHERE update_id=?",
+                            (json.dumps(retained, sort_keys=True, ensure_ascii=False), uid))
+
     def hold_frozen_transcript(self, uid: int, reason: str) -> None:
         """Keep the original decision and record why a legacy turn cannot replay."""
         if reason != "legacy_parameterized_audio_unresolved":
