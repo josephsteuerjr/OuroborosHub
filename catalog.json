@@ -2268,8 +2268,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "f186aa338b0a91ac1c044e996e7cce7061d5e29e128ce5adc8d8ac65083c0180",
-          "size": 14840
+          "sha256": "ef350bf8643cf9e8d017f5f3187e01eb2098528884f1b5f1219a68043d17c730",
+          "size": 14868
         },
         {
           "path": "plugin.py",
@@ -2283,8 +2283,8 @@
         },
         {
           "path": "tests/test_user_media.py",
-          "sha256": "2b0b11a5c8c0fda3bfc24f1362979f5b761a3dc5f2f643d60d7fc779c643a677",
-          "size": 34596
+          "sha256": "7b5587bcd40e44e7dcd062453bb02aa24838c008789a6a984e3004ebcaec7afa",
+          "size": 36146
         },
         {
           "path": "userbot/__init__.py",
@@ -2328,8 +2328,8 @@
         },
         {
           "path": "userbot/runtime.py",
-          "sha256": "366a551f6b1d4c198f473441ffba610d6f4dad741a76dd17d52372454fff5936",
-          "size": 60908
+          "sha256": "7406b7f8dfa40fa408aa24a8a36dd4835cd3b411ea7f61db96faf84fd909bc86",
+          "size": 61352
         },
         {
           "path": "userbot/store.py",

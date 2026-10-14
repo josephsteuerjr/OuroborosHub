@@ -645,6 +645,45 @@ def test_revocation_during_send_preflight_prevents_physical_send(tmp_path):
         store.close()
 
 
+def test_missing_spool_after_deferred_host_turn_holds_without_restarting_turn(tmp_path):
+    import json
+
+    bridge, store, adapter, _presence = _bridge(tmp_path, bound=True)
+
+    class Deferred:
+        binding_id = "a" * 32
+
+        def __init__(self):
+            self.turns = self.works = 0
+
+        def turn(self, _event, **_options):
+            self.turns += 1
+            return PresenceResult("completed", outcome="deferred", work_ref="work-A")
+
+        def work(self, _work_ref):
+            self.works += 1
+            raise AssertionError("missing source must not poll or replay Host")
+
+    host = Deferred()
+    bridge.presence = host
+    message = _message(kind="photo", data=b"image")
+    adapter.client = _Client(message, b"image")
+    path = bridge.spool_update(_event(message))
+    try:
+        assert asyncio.run(bridge.process_incoming()) == 0
+        assert json.loads(path.read_text())["work_ref"] == "work-A"
+        assert host.turns == 1
+        path.unlink()  # lost after Host acceptance, not the initial DB/file gap
+        assert asyncio.run(bridge.process_incoming()) == 0
+        assert host.turns == 1 and host.works == 0 and not path.exists()
+        row = store.db.execute("SELECT status,initial_json FROM raw_ingress").fetchone()
+        assert row["status"] == "held" and json.loads(row["initial_json"])["message_id"] == 12
+        assert bridge._ingress_failures[-1001][0] == "RAW_SOURCE_MISSING"
+        assert bridge.media.ready_file(path.name)[0].read_bytes() == b"image"
+    finally:
+        store.close()
+
+
 def test_revocation_during_catalog_wait_prevents_host_transcription(tmp_path):
     bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
     message = _message(kind="voice", data=b"OggS-voice")

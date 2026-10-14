@@ -457,7 +457,13 @@ class UserSessionBridge:
                 attempted += 1
                 path = self.state_dir / "incoming" / filename
                 if not path.exists():
-                    _atomic_json(path, original)  # crash between index and file
+                    # The SQLite original predates selected_binding, transcript
+                    # and work_ref updates. Absence might be the harmless first
+                    # capture gap OR a lost file after an uncertain Host POST;
+                    # reconstructing it would erase custody and re-admit speech.
+                    self.store.settle_raw(str(self.config.account_id), filename, held=True)
+                    self._ingress_health(original["peer_id"], "RAW_SOURCE_MISSING")
+                    continue
                 raw = _read_json(path)
                 if raw.get("account_id") != self.config.account_id:
                     self.store.settle_raw(str(self.config.account_id), filename, held=True)
