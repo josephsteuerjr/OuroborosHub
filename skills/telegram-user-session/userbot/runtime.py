@@ -21,6 +21,7 @@ from typing import Any, Callable
 from telethon import errors as telegram_errors
 
 from userbot.action_store import ActionStore
+from userbot.config import load_config
 from userbot.actions import ActionAmbiguous, ActionFloodWait, ActionRejected, Actions
 from userbot.media_inbox import LegacyAudioReceipt, MediaFetchUnavailable, MediaInbox, MediaLimit, describe
 from userbot.presence import PresenceClient, build_event
@@ -35,6 +36,10 @@ class OversizedReply(ValueError):
 
 class IngressTooLarge(RuntimeError):
     """An allowlisted update was not captured; stop and reconcile history."""
+
+
+class EnrollmentRevoked(ValueError):
+    """A readable owner configuration revoked this event before Host admission."""
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -173,6 +178,35 @@ class UserSessionBridge:
             return reader(peer_id, topic_id)
         # Compatibility only with the test's simple one-peer configuration.
         return self.config.binding_id if peer_id in self.config.allowed_peer_ids else None
+
+    def _current_enrollment(self, peer: int, topic: int | None,
+                            binding_id: str, revision: str | None = None) -> bool:
+        """Re-read owner authority at the effect boundary, not at the loop tick.
+
+        Missing/unreadable configuration raises so incoming stays pending and an
+        outgoing preflight never marks its send attempted. An observed revocation
+        returns False; unrelated peers' changes do not revoke this event.
+        """
+        current = load_config(self.state_dir)
+        if current is None:
+            raise ValueError("owner configuration unavailable")
+        if (current.account_id, current.api_id, current.api_hash, current.phone) != (
+                self.config.account_id, self.config.api_id, self.config.api_hash, self.config.phone):
+            return False
+        return (current.binding_for(peer, topic) == binding_id and
+                (revision is None or _binding_revision(current, peer) == revision))
+
+    def _invoke_presence(self, presence: PresenceClient, *, peer: int, topic: int | None,
+                         binding_id: str, revision: str, work_ref: str,
+                         event: dict[str, Any], staged: Path | None) -> Any:
+        # Check inside the worker performing Host I/O, after all async catalog
+        # and transcription waits, immediately before the HTTP call.
+        if not self._current_enrollment(peer, topic, binding_id, revision):
+            raise EnrollmentRevoked("binding revoked before Host admission")
+        if work_ref:
+            return presence.work(work_ref)
+        return presence.turn(event, delivery_reporting_version=self.delivery_reporting_version,
+                             staged_files=[str(staged)] if staged else None)
 
     def _presence_for(self, binding_id: str) -> PresenceClient:
         if getattr(self.presence, "binding_id", binding_id) == binding_id:
@@ -550,10 +584,15 @@ class UserSessionBridge:
                                           event_id, pending_interim["turn_ref"], phase="interim")
                         raw.pop("pending_interim")
                         _atomic_json(path, raw)
-                    response = await asyncio.to_thread(presence.work, work_ref) if work_ref else (
-                        await asyncio.to_thread(presence.turn, event,
-                                                delivery_reporting_version=self.delivery_reporting_version,
-                                                staged_files=[str(staged[0])] if staged else None))
+                    try:
+                        response = await asyncio.to_thread(
+                            self._invoke_presence, presence, peer=peer, topic=topic,
+                            binding_id=binding_id, revision=raw["binding_revision"],
+                            work_ref=work_ref, event=event, staged=staged[0] if staged else None)
+                    except EnrollmentRevoked:
+                        raw["failure_code"] = "BINDING_OR_PERMISSION_CHANGED"
+                        await self._hold_unbound(raw, path, filename)
+                        continue
                     if response.kind == "completed" and response.outcome == "deferred" and response.text:
                         if not response.text.strip() or len(response.text.encode("utf-8")) > 4096:
                             raw["failure_code"] = "REPLY_TOO_LONG"
@@ -732,6 +771,17 @@ class UserSessionBridge:
                 self.store.reject_before_send(account, job.intent_id,
                                               job.lease_token, "REPLY_UNAVAILABLE")
                 return True
+        # Catalog and reply-target reads may have waited across an owner revoke.
+        # Do not cross the durable attempted/send boundary on a stale loop snapshot.
+        try:
+            current = self._current_enrollment(job.peer_id, job.topic_id,
+                                               payload["binding_id"])
+        except (ValueError, OSError):
+            return False  # Unreadable owner authority: preserve the unattempted lease.
+        if not current:
+            self.store.reject_before_send(account, job.intent_id, job.lease_token,
+                                          "BINDING_OR_PERMISSION_CHANGED")
+            return True
         try:
             marked = self.store.mark_attempted(account, job.intent_id, job.lease_token)
         except ValueError:

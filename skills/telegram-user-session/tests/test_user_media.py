@@ -13,7 +13,7 @@ _SOURCE = Path(__file__).resolve().parents[1]
 if str(_SOURCE) not in sys.path:
     sys.path.insert(0, str(_SOURCE))
 
-from userbot.config import Config  # noqa: E402
+from userbot.config import Config, save_config  # noqa: E402
 from userbot.media_inbox import MediaInbox, MediaLimit, describe  # noqa: E402
 from userbot.presence import PresenceResult  # noqa: E402
 from userbot.runtime import UserSessionBridge  # noqa: E402
@@ -127,6 +127,7 @@ def _bridge(tmp_path, *, bound=False):
     config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
                     allowed_peer_ids=(-1001,) if bound else (),
                     binding_id="a" * 32 if bound else None, account_id=123)
+    save_config(tmp_path, config)
     adapter = Adapter()
     presence = Presence()
     store = DurableStore(tmp_path / "transport.sqlite3")
@@ -497,6 +498,7 @@ def test_other_peer_edit_keeps_admitted_deferred_work_but_revocation_holds_it(tm
     bridge.config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
                            allowed_peer_ids=(-1001,), account_id=123,
                            bindings=(Binding(-1001, None, a),))
+    save_config(tmp_path, bridge.config)
 
     class Deferred:
         binding_id = a
@@ -527,6 +529,7 @@ def test_other_peer_edit_keeps_admitted_deferred_work_but_revocation_holds_it(tm
                                account_id=123,
                                bindings=((Binding(-1002, None, b),) if revoke_a else
                                          (Binding(-1002, None, b), Binding(-1001, None, a))))
+        save_config(tmp_path, bridge.config)
         result = asyncio.run(bridge.process_incoming())
         if revoke_a:
             assert result == 0 and host.works == 0
@@ -548,6 +551,7 @@ def test_missing_private_source_after_durable_capture_never_rebinds_on_redeliver
     original.unlink()  # crash/loss across the DB-capture → private-file seam
     bridge.config = Config(api_id=123, api_hash="a" * 32, phone="+123456789",
                            allowed_peer_ids=(-1001,), account_id=123, binding_id="b" * 32)
+    save_config(tmp_path, bridge.config)
     try:
         assert bridge.spool_update(event) is None
         assert not original.exists() and store.pending_raw_count("123") == 0
@@ -557,6 +561,86 @@ def test_missing_private_source_after_durable_capture_never_rebinds_on_redeliver
         assert json.loads(saved["initial_json"])["binding_id"] == "a" * 32
         assert bridge._ingress_failures[-1001][0] == "RAW_SOURCE_MISSING"
         assert asyncio.run(bridge.process_incoming()) == 0 and not presence.calls
+    finally:
+        store.close()
+
+
+def test_revocation_during_transcription_holds_original_without_host_turn(tmp_path):
+    import json
+    import threading
+
+    bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
+    message = _message(kind="voice", data=b"OggS-voice")
+    adapter.client = _Client(message, b"OggS-voice")
+    path = bridge.spool_update(_event(message))
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_transcribe(**_kwargs):
+        entered.set()
+        assert release.wait(5)
+        return "heard", "ready"
+
+    presence.transcribe_media = slow_transcribe
+
+    async def race():
+        task = asyncio.create_task(bridge.process_incoming())
+        assert await asyncio.to_thread(entered.wait, 5)
+        # The companion's self.config still names A: the owner has only changed
+        # the durable document while the transcription worker was suspended.
+        save_config(tmp_path, Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                                    allowed_peer_ids=(-1001,), account_id=123,
+                                    binding_id="b" * 32))
+        release.set()
+        return await task
+
+    try:
+        assert asyncio.run(race()) == 0
+        held = path.with_suffix(".held")
+        assert held.exists() and not path.exists() and not presence.calls
+        assert json.loads(held.read_text())["selected_binding"] == "a" * 32
+        assert bridge.media.ready_file(path.name)[0].read_bytes() == b"OggS-voice"
+    finally:
+        release.set()
+        store.close()
+
+
+def test_revocation_during_send_preflight_prevents_physical_send(tmp_path):
+    bridge, store, adapter, _presence = _bridge(tmp_path, bound=True)
+    bridge._queue_reply({"peer_id": -1001, "message_id": 12}, None, "a" * 32,
+                        "reply", 1, "source-event", "turn")
+    entered, release = asyncio.Event(), asyncio.Event()
+    sends = []
+
+    async def topic_ids(_peer):
+        entered.set()
+        await release.wait()
+        return None
+
+    async def send_text(*args, **kwargs):
+        sends.append((args, kwargs))
+        raise AssertionError("revoked send reached Telegram")
+
+    async def get_messages(_peer, *, ids):
+        return SimpleNamespace(id=ids)
+
+    adapter.client = SimpleNamespace(get_messages=get_messages)
+    adapter.topic_ids = topic_ids
+    adapter.send_text = send_text
+
+    async def race():
+        task = asyncio.create_task(bridge.send_one())
+        await asyncio.wait_for(entered.wait(), 5)
+        save_config(tmp_path, Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                                    allowed_peer_ids=(-1001,), account_id=123,
+                                    binding_id="b" * 32))
+        release.set()
+        return await task
+
+    try:
+        assert asyncio.run(race()) is True
+        row = store.db.execute("SELECT status,error_code FROM outgoing").fetchone()
+        assert row["status"] == "failed" and row["error_code"] == "BINDING_OR_PERMISSION_CHANGED"
+        assert not sends
     finally:
         store.close()
 
