@@ -38,6 +38,8 @@ class _Bot:
         if method == "getUpdates":
             return self.updates
         if method == "sendMessage":
+            if not kwargs["pre_send"]():
+                raise RuntimeError("owner binding revoked")
             return {"message_id": 920, "message_thread_id": payload.get("message_thread_id")}
         raise AssertionError(method)
 
@@ -683,6 +685,99 @@ def test_mapping_is_frozen_with_update_before_presence_processing(tmp_path, boun
         assert row["status"] == "held" and row["body"]
         assert row["binding_id"] == (a if bound_at_capture else "unbound")
     assert (tmp_path / "media" / "1.jpg").read_bytes() == PHOTO  # private bytes retained
+
+
+def test_bot_binding_revoked_during_transcription_holds_source(tmp_path):
+    import hashlib
+    from bot.config import empty
+    from bot.media import MediaStore, describe
+
+    _cfg(tmp_path)
+    update = _update(1, photo=False)
+    update["message"].pop("text")
+    update["message"]["voice"] = {"file_id": "voice-1", "file_size": 14}
+    audio = b"OggSvoice-data"
+
+    class Downloader:
+        def download(self, _file_id, target, *, byte_limit):
+            assert byte_limit >= len(audio)
+            Path(target).write_bytes(audio)
+            return len(audio), hashlib.sha256(audio).hexdigest()
+
+    media = MediaStore(tmp_path)
+    media.capture(1, describe(update["message"]), empty(), Downloader())
+
+    class RevokingHost(_Host):
+        def transcribe(self, *_args):
+            save(tmp_path, empty())  # owner removes A while transcription awaits
+            return "heard", "ready"
+
+        def turn(self, *_args):
+            raise AssertionError("revoked binding reached Host Presence")
+
+    bot = _Bot([update])
+    run(tmp_path, bot=bot, host=RevokingHost(), max_polls=1)
+    with Store(tmp_path / "transport.sqlite3") as store:
+        assert store.counts() == {"held": 1}
+        assert store.db.execute("SELECT binding_id FROM inbound").fetchone()[0] == "a" * 32
+    assert media.ready_file(1)[0].read_bytes() == audio
+    assert not any(method == "sendMessage" for method, _ in bot.calls)
+
+
+def test_bot_rechecks_binding_after_token_separation_before_send(tmp_path):
+    from bot.config import load, empty
+    from bot.runtime import send_one
+    from bot.transport import TransportUnavailable
+
+    _cfg(tmp_path)
+
+    class RotatingBot(_Bot):
+        def api(self, method, payload, **kwargs):
+            assert method == "sendMessage"
+            save(tmp_path, empty())  # emulate a blocking Host separation check
+            if not kwargs["pre_send"]():
+                raise TransportUnavailable("revoked before physical send")
+            raise AssertionError("revoked mapping reached Telegram")
+
+    with Store(tmp_path / "transport.sqlite3") as store:
+        store.queue_reply("source", -1001, 42, 12, "a" * 32, "old reply")
+        bot = RotatingBot([])
+        assert send_one(store, load(tmp_path), bot, _Host(), 777, tmp_path) is True
+        assert store.db.execute("SELECT status FROM outbound").fetchone()[0] == "unknown"
+        assert not any(method == "sendMessage" for method, _ in bot.calls)
+
+
+def test_real_bot_transport_checks_revocation_after_host_separation(tmp_path):
+    from bot.config import binding_for, load, empty
+    from bot.transport import BotTransport, TransportUnavailable
+
+    _cfg(tmp_path)
+    requests = []
+
+    class Reply:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _max_bytes):
+            return b'{"ok":true,"status":"distinct"}'
+
+    class Opener:
+        def open(self, req, *, timeout):
+            requests.append(req.full_url)
+            assert req.full_url == "http://127.0.0.1:8767/telegram/presence-bot-token"
+            save(tmp_path, empty())
+            return Reply()
+
+    bot = BotTransport("second-token", "http://127.0.0.1:8767", "host-private", opener=Opener())
+    with pytest.raises(TransportUnavailable, match="revoked"):
+        bot.api("sendMessage", {"chat_id": -1001, "text": "old reply"},
+                pre_send=lambda: binding_for(load(tmp_path), -1001, 42) == "a" * 32)
+    assert requests == ["http://127.0.0.1:8767/telegram/presence-bot-token"]
 
 
 def test_silent_audio_is_not_misreported_as_missing_transcriber():

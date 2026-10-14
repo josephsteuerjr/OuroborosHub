@@ -645,6 +645,59 @@ def test_revocation_during_send_preflight_prevents_physical_send(tmp_path):
         store.close()
 
 
+def test_action_rechecks_owner_after_second_target_await(tmp_path, monkeypatch):
+    from telethon import types
+    from userbot import actions as action_module
+    from userbot.action_store import ActionStore
+
+    bridge, store, adapter, _presence = _bridge(tmp_path, bound=True)
+    action_store = ActionStore(tmp_path / "actions.sqlite3")
+    action_store.enqueue("123", "delete-one", operation="delete", peer_id=-1001,
+                         binding_id="a" * 32, topic_id=None, message_id=12)
+    bridge.action_store = action_store
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    actions = action_module.Actions.__new__(action_module.Actions)
+    actions.adapter = SimpleNamespace(client=object())
+
+    async def target(_peer, _message, _topic):
+        calls.append("target")
+        if len(calls) == 2:  # Actions repeats target lookup after durable attempted mark.
+            entered.set()
+            await release.wait()
+        return types.InputPeerChannel(channel_id=1, access_hash=2), SimpleNamespace()
+
+    async def mutate(*_args):
+        calls.append("physical mutation")
+        raise AssertionError("revoked action reached Telegram")
+
+    actions._own_target = target
+    bridge._actions = actions
+    monkeypatch.setattr(action_module, "_mutate", mutate)
+
+    async def me():
+        return 123
+
+    adapter.get_me = me
+
+    async def race():
+        task = asyncio.create_task(bridge.process_action_once())
+        await asyncio.wait_for(entered.wait(), 5)
+        save_config(tmp_path, Config(api_id=123, api_hash="a" * 32, phone="+123456789",
+                                    allowed_peer_ids=(-1001,), account_id=123,
+                                    binding_id="b" * 32))
+        release.set()
+        return await task
+
+    try:
+        assert asyncio.run(race()) is True
+        action = action_store.get("123", "delete-one")
+        assert action.status == "unknown" and calls == ["target", "target"]
+    finally:
+        action_store.close()
+        store.close()
+
+
 def test_bound_silent_audio_keeps_source_and_names_silence_not_unavailability(tmp_path):
     bridge, store, adapter, presence = _bridge(tmp_path, bound=True)
     message = _message(kind="voice", data=b"OggS-silence")

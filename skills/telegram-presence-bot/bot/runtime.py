@@ -130,12 +130,22 @@ def process_one(row: dict, *, account: int, config: dict, store: Store,
         store.hold_frozen_transcript(uid, "legacy_parameterized_audio_unresolved")
         return False, chat
     if ready and receipt["kind"] in {"voice", "audio"} and not transcript:
+        # Media capture does not grant model access. Its local/Host processing
+        # may have waited through an owner edit since this pass's config read.
+        if binding_for(load(media.root.parent), chat, topic) != binding:
+            store.settle(uid, held=True)
+            return False, chat
         text, state = host.transcribe(binding, account, chat, topic,
                                       ready[0].read_bytes(), receipt["mime"])
         transcript = store.freeze_transcript(uid, {"status": state, "text": text})
     body = _media_text(message, receipt, transcript)
     event = _event(account, chat, topic, mid, actor, uid, kind, body, receipt)
     work = row["work_ref"]
+    # The transcriber may have blocked for minutes. A captured binding is an
+    # identity, not continuing permission after the owner removes it.
+    if binding_for(load(media.root.parent), chat, topic) != binding:
+        store.settle(uid, held=True)
+        return False, chat
     try:
         response = host.work(binding, work) if work else (
             host.turn(binding, event, [str(ready[0])] if ready else []))
@@ -178,7 +188,8 @@ def process_one(row: dict, *, account: int, config: dict, store: Store,
     return False, chat
 
 
-def send_one(store: Store, config: dict, bot: BotTransport, host: HostClient, account: int) -> bool:
+def send_one(store: Store, config: dict, bot: BotTransport, host: HostClient,
+             account: int, state_dir: Path) -> bool:
     job = store.claim_reply()  # durable attempted mark BEFORE the first network call
     if job is None:
         return False
@@ -191,7 +202,8 @@ def send_one(store: Store, config: dict, bot: BotTransport, host: HostClient, ac
     if job["topic_id"] is not None:
         payload["message_thread_id"] = job["topic_id"]
     try:
-        result = bot.api("sendMessage", payload)
+        result = bot.api("sendMessage", payload, pre_send=lambda: (
+            binding_for(load(state_dir), job["chat_id"], job["topic_id"]) == job["binding_id"]))
         if not isinstance(result, dict) or type(result.get("message_id")) is not int:
             raise TransportUnavailable("Telegram send receipt unavailable")
         thread = result.get("message_thread_id")
@@ -267,5 +279,5 @@ def run(state_dir: Path, *, bot: BotTransport, host: HostClient, max_polls: int 
                     pending = True
                 if pending and type(chat) is int:
                     blocked_chats.add(chat)
-            send_one(store, load(state_dir), bot, host, account)  # current pre-send authority
+            send_one(store, load(state_dir), bot, host, account, state_dir)  # current pre-send authority
             report_sent(store, host, account)

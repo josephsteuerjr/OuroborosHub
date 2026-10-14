@@ -10,7 +10,7 @@ mutation; Telegram can still change a message between that read and the write.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Callable
 
 from .telegram import LoginRequired, TelegramAdapter
 from .topic import classify_message
@@ -126,6 +126,7 @@ class Actions:
 
     async def edit(
         self, peer_id: int, message_id: int, text: str, *, topic_id: int | None,
+        authorize: Callable[[], bool] | None = None,
     ) -> Any:
         """Edit one own text-only message; an uncertain call is never retried here."""
         from telethon.tl.functions.messages import EditMessageRequest
@@ -135,24 +136,28 @@ class Actions:
         peer, message = await self._own_target(peer_id, message_id, topic_id)
         if getattr(message, "media", None) is not None or getattr(message, "entities", None):
             raise ValueError("editing media or formatted text is outside this adapter")
+        _require_current_authority(authorize)
         return await _mutate(self.adapter.client, EditMessageRequest(
             peer=peer, id=message_id, message=text, no_webpage=True,
         ))
 
     async def delete(
         self, peer_id: int, message_id: int, *, topic_id: int | None,
+        authorize: Callable[[], bool] | None = None,
     ) -> Any:
         """Delete one own message with channel-scoped raw request (never a list API)."""
         from telethon import utils
         from telethon.tl.functions.channels import DeleteMessagesRequest
 
         peer, _ = await self._own_target(peer_id, message_id, topic_id)
+        _require_current_authority(authorize)
         return await _mutate(self.adapter.client, DeleteMessagesRequest(
             channel=utils.get_input_channel(peer), id=[message_id],
         ))
 
     async def react(
         self, peer_id: int, message_id: int, emoji: str, *, topic_id: int | None,
+        authorize: Callable[[], bool] | None = None,
     ) -> Any:
         """Set exactly one ordinary Unicode emoji reaction on one accessible message."""
         from telethon.tl import types
@@ -161,11 +166,19 @@ class Actions:
         if not isinstance(emoji, str) or not emoji or len(emoji) > 16 or emoji.isspace():
             raise ValueError("emoji must be one nonempty, short emoji string")
         peer, _ = await self._target(peer_id, message_id, topic_id)
+        _require_current_authority(authorize)
         return await _mutate(self.adapter.client, SendReactionRequest(
             peer=peer, msg_id=message_id,
             reaction=[types.ReactionEmoji(emoticon=emoji)],
             big=False, add_to_recent=False,
         ))
+
+
+def _require_current_authority(authorize: Callable[[], bool] | None) -> None:
+    # The target and ownership preflight awaits Telegram; owner permissions can
+    # change while it is suspended. No await separates this check from _mutate.
+    if authorize is not None and authorize() is not True:
+        raise ValueError("owner binding revoked before Telegram mutation")
 
 
 def _canonical(topic_id: int | None) -> int | None:

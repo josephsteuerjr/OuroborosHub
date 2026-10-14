@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Callable
 from urllib import error, parse, request
 
 
@@ -56,11 +57,23 @@ class BotTransport:
         except (OSError, ValueError, TypeError, error.HTTPError):
             raise TokenUnavailable("bot token separation unavailable") from None
 
-    def api(self, method: str, payload: dict, *, timeout: int = 35):
+    def api(self, method: str, payload: dict, *, timeout: int = 35,
+            pre_send: Callable[[], bool] | None = None):
         if method not in {"getMe", "getUpdates", "getFile", "sendMessage"}:
             raise ValueError("unsupported Bot API operation")
+        if pre_send is not None and method != "sendMessage":
+            raise ValueError("pre-send owner check applies only to messages")
         self.check_separation()
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        # Host token separation may block on the network. Re-read owner mapping
+        # AFTER it and immediately before the mutating Telegram request.
+        if pre_send is not None:
+            try:
+                permitted = pre_send()
+            except (OSError, ValueError, TypeError):
+                raise TransportUnavailable("owner binding unreadable before send") from None
+            if permitted is not True:
+                raise TransportUnavailable("owner binding revoked before send")
         req = request.Request("https://api.telegram.org/bot" + self._token + "/" + method,
                               data=data, method="POST", headers={"Content-Type": "application/json"})
         try:

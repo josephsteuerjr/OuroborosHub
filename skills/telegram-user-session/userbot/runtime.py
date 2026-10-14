@@ -946,6 +946,15 @@ class UserSessionBridge:
                 pass
             return False
 
+        # get_me and the target preflight may each suspend across an owner edit.
+        # Refuse a proven revoke while the intent is still unattempted.
+        try:
+            current = self._current_enrollment(job.peer_id, job.topic_id, job.binding_id)
+        except (ValueError, OSError):
+            return False  # Keep the lease for a later readable preflight.
+        if not current:
+            return reject("BINDING_OR_PERMISSION_CHANGED")
+        authorize = lambda: self._current_enrollment(job.peer_id, job.topic_id, job.binding_id)
         try:
             self.action_store.mark_attempted(account, job.intent_id, token)
         except ValueError:
@@ -954,11 +963,14 @@ class UserSessionBridge:
             return False
         try:
             if job.operation == "edit":
-                await actions.edit(job.peer_id, job.message_id, payload["text"], topic_id=job.topic_id)
+                await actions.edit(job.peer_id, job.message_id, payload["text"],
+                                   topic_id=job.topic_id, authorize=authorize)
             elif job.operation == "delete":
-                await actions.delete(job.peer_id, job.message_id, topic_id=job.topic_id)
+                await actions.delete(job.peer_id, job.message_id,
+                                     topic_id=job.topic_id, authorize=authorize)
             else:
-                await actions.react(job.peer_id, job.message_id, payload["emoji"], topic_id=job.topic_id)
+                await actions.react(job.peer_id, job.message_id, payload["emoji"],
+                                    topic_id=job.topic_id, authorize=authorize)
         except (ActionRejected, ActionFloodWait) as exc:
             code = "FLOOD_WAIT" if isinstance(exc, ActionFloodWait) else "RPC_REJECTED"
             self.action_store.settle(account, job.intent_id, token, success=False, error_code=code)
